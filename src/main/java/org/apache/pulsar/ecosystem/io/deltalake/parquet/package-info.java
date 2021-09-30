@@ -16,7 +16,8 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 /**
- * Classes for implementing a pulsar IO connector that generates randomized messages.
+ * Classes for implementing a pulsar IO connector that read data from delta lake.
  */
-package org.apache.pulsar.ecosystem.io.random;
+package org.apache.pulsar.ecosystem.io.deltalake.parquet;

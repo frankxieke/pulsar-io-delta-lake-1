@@ -31,10 +31,10 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.apache.pulsar.ecosystem</groupId>
-  <artifactId>pulsar-io-template</artifactId>
-  <version>0.0.1</version>
-  <name>Pulsar Ecosystem :: IO Connector :: Template Project</name>
-  <description>It is a project template for developing an Apache Pulsar connector</description>
+  <artifactId>pulsar-io-delta-lake</artifactId>
+  <version>2.7.0</version>
+  <name>Pulsar Ecosystem :: IO Connector :: Delta Lake</name>
+  <description>It is a delta lake source connector imported data from delta lake to pulsar.</description>
 
   <properties>
     <java.version>1.8</java.version>
@@ -47,7 +47,10 @@
     <!-- connector dependencies -->
     <jackson.version>2.9.7</jackson.version>
     <lombok.version>1.16.22</lombok.version>
-    <pulsar.version>2.2.0</pulsar.version>
+    <pulsar.version>2.9.0-SNAPSHOT</pulsar.version>
+
+    <parquet.version>1.11.0</parquet.version>
+    <hadoop.version>3.2.1</hadoop.version>
 
     <!-- test dependencies -->
     <junit.version>4.12</junit.version>
@@ -75,7 +78,29 @@
 
   <!-- keep all the dependencies used by all modules here -->
   <dependencyManagement>
+    <!-- all support is delta-standalone2.12 -->
     <dependencies>
+      <dependency>
+        <groupId>org.apache.hadoop</groupId>
+        <artifactId>hadoop-client</artifactId>
+        <version>${hadoop.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.hadoop</groupId>
+        <artifactId>hadoop-common</artifactId>
+        <version>${hadoop.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.hadoop</groupId>
+        <artifactId>hadoop-aws</artifactId>
+        <version>${hadoop.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.parquet</groupId>
+        <artifactId>parquet-hadoop</artifactId>
+        <version>1.10.1</version>
+      </dependency>
+
       <dependency>
         <groupId>org.apache.pulsar</groupId>
         <artifactId>pulsar-io-core</artifactId>
@@ -127,7 +152,6 @@
 
   <!-- include the dependencies -->
   <dependencies>
-
     <!-- provided dependencies (available at compilation and test classpaths and *NOT* packaged) -->
     <dependency>
       <groupId>org.projectlombok</groupId>
@@ -140,6 +164,19 @@
       <scope>provided</scope>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-aws</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.parquet</groupId>
+      <artifactId>parquet-hadoop</artifactId>
+    </dependency>
+
     <!-- runtime dependencies -->
     <dependency>
       <groupId>org.apache.pulsar</groupId>
@@ -150,6 +187,24 @@
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
     </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.module</groupId>
+      <artifactId>jackson-module-scala_2.12</artifactId>
+      <version>2.6.7.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.github.mjakubowski84</groupId>
+      <artifactId>parquet4s-core_2.12</artifactId>
+      <version>1.2.1</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.delta</groupId>
+      <artifactId>delta-standalone_2.12</artifactId>
+      <version>0.2.1</version>
+    </dependency>
+
 
     <!-- test dependencies -->
     <dependency>
@@ -176,6 +231,16 @@
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers</artifactId>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.pulsar</groupId>
+      <artifactId>pulsar-client</artifactId>
+      <version>2.9.0-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.parquet</groupId>
+      <artifactId>parquet-column</artifactId>
+      <version>1.10.1</version>
     </dependency>
   </dependencies>
 
@@ -239,6 +304,8 @@
             <excludes>
               <exclude>LICENSE</exclude>
               <exclude>NOTICE</exclude>
+              <exclude>**/*.xml</exclude>s
+              <exclude>.github/CODEOWNERS</exclude>
             </excludes>
             <mapping>
               <proto>JAVADOC_STYLE</proto>
