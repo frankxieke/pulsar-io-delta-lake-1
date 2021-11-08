@@ -65,7 +65,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
     private final Map<Integer, DeltaCheckpoint> checkpointMap = new HashMap<Integer, DeltaCheckpoint>();
     public DeltaReader reader;
     private String destinationTopic;
-    private long cnt = 0;
+    private long readCnt = 0;
     private long sendCnt = 0;
 
     public void setDeltaSchema(StructType deltaSchema) {
@@ -117,7 +117,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
 
     @Override
     public Record<GenericRecord> read() throws Exception {
-        cnt++;
+        readCnt++;
         DeltaRecord deltaRecord = this.queue.take();
         return deltaRecord;
     }
@@ -130,7 +130,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         try {
             log.debug("enqueue : {} {} [{}] putcount:{} readcount {}",
                     rowRecordData.nextCursor.toString(), this.destinationTopic,
-                    rowRecordData.simpleGroup.toString(), sendCnt++, cnt);
+                    rowRecordData.simpleGroup.toString(), sendCnt++, readCnt);
             if (this.deltaSchema != null) {
                 this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, deltaSchema, this.sourceContext));
             } else if (this.pulsarSchema != null) {
