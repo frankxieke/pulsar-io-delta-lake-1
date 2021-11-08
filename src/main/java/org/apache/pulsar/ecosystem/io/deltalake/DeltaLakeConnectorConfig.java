@@ -64,7 +64,50 @@ public class DeltaLakeConnectorConfig implements Serializable {
     /**
      * Validate if the configuration is valid.
      */
-    public void validate() {
+    public void validate() throws IOException {
+        if (!startingVersion.equals("") && !startingTimeStamp.equals("")) {
+            throw new IOException("startTimeStamp and startVersion can not be set at the same time.");
+        }
+
+        if (!startingVersion.equals("")) {
+            if (startingVersion.equals(FromLatest)) {
+                startingSnapShotVersionNumber = -1L;
+            } else {
+                try {
+                    startingSnapShotVersionNumber = Long.parseLong(startingVersion);
+                } catch (Exception e) {
+                    log.info("parse the startingVersion {} failed ", e);
+                    throw new IOException("startingVersion should be a number, parse failed");
+                }
+            }
+        }
+        if (!startingTimeStamp.equals("")) {
+            try {
+                Instant instant = Instant.parse(startingTimeStamp);
+                startingTimeStampSecond = instant.getEpochSecond();
+            } catch (Exception e) {
+                log.error("parse the startingTimestamp {} failed, ", e);
+                throw new IOException("startingTimestamp format parse failed, "
+                        + "it should be like 2021-09-29T20:17:46.384Z");
+            }
+        }
+
+        if (tablePath.equals("")) {
+            throw new IOException("tablePath can not be empty");
+        }
+
+        if (fileSystemType.equals("")) {
+            throw new IOException("filesystemtype can not be empty");
+        }
+
+        if (!fileSystemType.equals(FileSystemType) && !fileSystemType.equals(S3Type)) {
+            throw new IOException("fileSystemType not support for " + fileSystemType);
+        }
+        if (fileSystemType.equals(S3Type)) {
+            if (s3aAccesskey.equals("") || s3aSecretKey.equals("")) {
+                throw new IOException("s3aAccesskey or s3aSecretkey should be configured for s3");
+            }
+        }
     }
 
     /**
@@ -81,49 +124,6 @@ public class DeltaLakeConnectorConfig implements Serializable {
         conf = mapper.readValue(new ObjectMapper().writeValueAsString(config), DeltaLakeConnectorConfig.class);
         if (conf.startingTimeStamp.equals("") && conf.startingVersion.equals("")) {
             conf.startingVersion = FromLatest;
-        }
-        if (!conf.startingVersion.equals("") && !conf.startingTimeStamp.equals("")) {
-            throw new IOException("startTimeStamp and startVersion can not be set at the same time.");
-        }
-
-        if (!conf.startingVersion.equals("")) {
-            if (conf.startingVersion.equals(FromLatest)) {
-                conf.startingSnapShotVersionNumber = -1L;
-            } else {
-                try {
-                    conf.startingSnapShotVersionNumber = Long.parseLong(conf.startingVersion);
-                } catch (Exception e) {
-                    log.info("parse the startingVersion {} failed ", e);
-                    throw new IOException("startingVersion should be a number, parse failed");
-                }
-            }
-        }
-        if (!conf.startingTimeStamp.equals("")) {
-            try {
-                Instant instant = Instant.parse(conf.startingTimeStamp);
-                conf.startingTimeStampSecond = instant.getEpochSecond();
-            } catch (Exception e) {
-                log.error("parse the startingTimestamp {} failed, ", e);
-                throw new IOException("startingTimestamp format parse failed, "
-                        + "it should be like 2021-09-29T20:17:46.384Z");
-            }
-        }
-
-        if (conf.tablePath.equals("")) {
-            throw new IOException("tablePath can not be empty");
-        }
-
-        if (conf.fileSystemType.equals("")) {
-            throw new IOException("filesystemtype can not be empty");
-        }
-
-        if (!conf.fileSystemType.equals(FileSystemType) && !conf.fileSystemType.equals(S3Type)) {
-            throw new IOException("fileSystemType not support for " + conf.fileSystemType);
-        }
-        if (conf.fileSystemType.equals(S3Type)) {
-            if (conf.s3aAccesskey.equals("") || conf.s3aSecretKey.equals("")) {
-                throw new IOException("s3aAccesskey or s3aSecretkey should be configured for s3");
-            }
         }
         return conf;
     }

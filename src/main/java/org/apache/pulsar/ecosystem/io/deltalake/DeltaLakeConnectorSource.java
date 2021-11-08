@@ -83,8 +83,8 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         }
         this.sourceContext = sourceContext;
         this.destinationTopic = sourceContext.getOutputTopic();
-        log.info("destination topic is {} {}",
-                this.destinationTopic, sourceContext.getNumInstances());
+        log.info("destination topic is {} numberInstances: {} myInstanceId: {}",
+                this.destinationTopic, sourceContext.getNumInstances(), sourceContext.getInstanceId());
 
         // load the configuration and validate it
         this.config = DeltaLakeConnectorConfig.load(map);
@@ -98,7 +98,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
 
         Optional<Map<Integer, DeltaCheckpoint>> checkpointMapOpt = getCheckpointFromStateStore(sourceContext);
         if (!checkpointMapOpt.isPresent()) {
-            log.info("instanceId:{} source connector do nothing, without any parition assigned",
+            log.info("instanceId:{} source connector do nothing, without any partition assigned",
                     sourceContext.getInstanceId());
             return;
         }

@@ -50,7 +50,7 @@ public class DeltaReaderThread extends Thread {
                 List<DeltaReader.ReadCursor> actionList = reader.getDeltaActionFromSnapShotVersion(
                         startVersion, checkpoint.isFullCopy());
                 if (actionList.size() == 0) {
-                    if (startVersion == checkpoint.getSnapShotVersion()
+                    if (startVersion.equals(checkpoint.getSnapShotVersion())
                             && checkpoint.getMetadataChangeFileIndex() > 0 && checkpoint.getRowNum() > 0) {
                         log.info("read end of the delta version {}, will go to next version {}",
                                 startVersion, startVersion + 1);

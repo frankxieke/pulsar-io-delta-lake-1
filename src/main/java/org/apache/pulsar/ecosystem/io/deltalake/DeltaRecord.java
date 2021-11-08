@@ -367,7 +367,7 @@ public class DeltaRecord implements Record<GenericRecord> {
         try {
             sourceContext.putState(DeltaCheckpoint.getStatekey((int) partition),
                     ByteBuffer.wrap(mapper.writeValueAsBytes(checkpoint)));
-            log.info("ack parition {} sequence {} checkpoint {}", partition, sequence, checkpoint.toString());
+            log.debug("ack partition {} sequence {} checkpoint {}", partition, sequence, checkpoint.toString());
         } catch (Exception e) {
             log.error("putState failed for partition {} sequence {} ", partition, sequence, e);
         }
