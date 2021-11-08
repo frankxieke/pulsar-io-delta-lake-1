@@ -39,8 +39,8 @@ import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
 
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.Data;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.Schema;
@@ -80,7 +80,7 @@ public class DeltaRecord implements Record<GenericRecord> {
     private static StructType deltaSchema;
     private String topic;
     private DeltaReader.RowRecordData rowRecordData;
-    private static AtomicInteger msgCnt = new AtomicInteger(0);
+    public static Map<Integer, Long> msgSeqCntMap = new ConcurrentHashMap<>();
     private SourceContext sourceContext;
     private long sequence;
     private long partition;
@@ -90,7 +90,6 @@ public class DeltaRecord implements Record<GenericRecord> {
                        SourceContext sourceContext) throws Exception {
         this.rowRecordData = rowRecordData;
         this.sourceContext = sourceContext;
-        msgCnt.getAndIncrement();
         properties = new HashMap<>();
         this.topic = topic;
         if (this.deltaSchema != deltaSchema && deltaSchema != null) {
@@ -120,17 +119,19 @@ public class DeltaRecord implements Record<GenericRecord> {
             log.error("DeltaRecord: Not Support this kind of record {}", rowRecordData.nextCursor.act);
             throw new Exception("DeltaRecord: not support this kind of record");
         }
+
         String partitionValueStr = properties.get(PARTITION_VALUE_FIELD);
         partition = DeltaReader.getPartitionIdByDeltaPartitionValue(partitionValueStr,
-                DeltaReader.topicPartitionNum);
-        sequence = partition + msgCnt.get() * DeltaReader.topicPartitionNum;
+                        DeltaReader.topicPartitionNum);
+        Long msgCount = msgSeqCntMap.getOrDefault(partition, 0L);
+        sequence = msgCount++;
+        msgSeqCntMap.put((int) partition, msgCount);
     }
 
     public DeltaRecord(DeltaReader.RowRecordData rowRecordData, String topic, GenericSchema<GenericRecord> pulsarSchema,
                        SourceContext sourceContext) throws Exception {
         this.s = pulsarSchema;
         this.sourceContext = sourceContext;
-        msgCnt.getAndIncrement();
         properties = new HashMap<>();
         this.topic = topic;
 
@@ -159,7 +160,9 @@ public class DeltaRecord implements Record<GenericRecord> {
         String partitionValueStr = properties.get(PARTITION_VALUE_FIELD);
         partition = DeltaReader.getPartitionIdByDeltaPartitionValue(partitionValueStr,
                 DeltaReader.topicPartitionNum);
-        sequence = partition + msgCnt.get() * DeltaReader.topicPartitionNum;
+        Long msgCount = msgSeqCntMap.getOrDefault(partition, 0L);
+        sequence = msgCount++;
+        msgSeqCntMap.put((int) partition, msgCount);
     }
 
     public static GenericSchema<GenericRecord> convertToPulsarSchema(StructType deltaSchema) throws Exception {
@@ -352,11 +355,13 @@ public class DeltaRecord implements Record<GenericRecord> {
                     this.rowRecordData.nextCursor.version);
             checkpoint.setMetadataChangeFileIndex(this.rowRecordData.nextCursor.changeIndex);
             checkpoint.setRowNum(this.rowRecordData.nextCursor.rowNum);
+            checkpoint.setSeqCount(sequence);
         } else {
             checkpoint = new DeltaCheckpoint(DeltaCheckpoint.StateType.INCREMENTAL_COPY,
                     this.rowRecordData.nextCursor.version);
             checkpoint.setMetadataChangeFileIndex(this.rowRecordData.nextCursor.changeIndex);
             checkpoint.setRowNum(this.rowRecordData.nextCursor.rowNum);
+            checkpoint.setSeqCount(sequence);
         }
         ObjectMapper mapper = new ObjectMapper();
         try {

@@ -75,7 +75,6 @@ public class DeltaLakeConnectorConfig implements Serializable {
      * @throws IOException when fail to load the configuration from provided properties
      */
     public static DeltaLakeConnectorConfig load(Map<String, Object> config) throws IOException {
-        log.info("config-> {} {}", config.toString(), config);
         ObjectMapper mapper = new ObjectMapper();
         DeltaLakeConnectorConfig conf = new DeltaLakeConnectorConfig();
         conf.includeHistoryData = false;

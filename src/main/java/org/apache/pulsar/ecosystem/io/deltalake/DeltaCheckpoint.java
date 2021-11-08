@@ -53,6 +53,7 @@ public class DeltaCheckpoint implements Comparable<DeltaCheckpoint> {
         this.snapShotVersion = snapshotVersion;
         this.metadataChangeFileIndex = 0L;
         this.rowNum = 0L;
+        this.seqCount = 0L;
     }
 
     @Override
@@ -62,6 +63,7 @@ public class DeltaCheckpoint implements Comparable<DeltaCheckpoint> {
                 + ", snapShotVersion=" + snapShotVersion
                 + ", metadataChangeFileIndex=" + metadataChangeFileIndex
                 + ", rowNum=" + rowNum
+                + ", seqCount=" + seqCount
                 + '}';
     }
 
@@ -69,6 +71,7 @@ public class DeltaCheckpoint implements Comparable<DeltaCheckpoint> {
     private Long snapShotVersion;
     private Long metadataChangeFileIndex;
     private Long rowNum;
+    private Long seqCount;
 
     @Override
     public int compareTo(DeltaCheckpoint o) {

@@ -78,7 +78,6 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
 
     @Override
     public void open(Map<String, Object> map, SourceContext sourceContext) throws Exception {
-        System.out.println("map " + map + " context:" + sourceContext);
         if (null != config) {
             throw new IllegalStateException("Connector is already open");
         }
@@ -86,7 +85,6 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         this.destinationTopic = sourceContext.getOutputTopic();
         log.info("destination topic is {} {}",
                 this.destinationTopic, sourceContext.getNumInstances());
-        log.info("path-> {} ", sourceContext.getClass().getProtectionDomain().getCodeSource().getLocation().getFile());
 
         // load the configuration and validate it
         this.config = DeltaLakeConnectorConfig.load(map);
@@ -104,6 +102,9 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                     sourceContext.getInstanceId());
             return;
         }
+        checkpointMap.forEach((key, value) -> {
+            DeltaRecord.msgSeqCntMap.put(key, value.getSeqCount());
+        });
         reader.setFilter(initDeltaReadFilter(checkpointMap));
         reader.setStartCheckpoint(checkpointMap.get(minCheckpointMapKey));
         DeltaReader.topicPartitionNum = this.topicPartitionNum;
@@ -127,8 +128,9 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
 
     public void enqueue(DeltaReader.RowRecordData rowRecordData) {
         try {
-            log.info("enqueue : {} {} [{}] totalcount:{}", rowRecordData.nextCursor.toString(), this.destinationTopic,
-                    rowRecordData.simpleGroup.toString(), sendCnt++);
+            log.debug("enqueue : {} {} [{}] putcount:{} readcount {}",
+                    rowRecordData.nextCursor.toString(), this.destinationTopic,
+                    rowRecordData.simpleGroup.toString(), sendCnt++, cnt);
             if (this.deltaSchema != null) {
                 this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, deltaSchema, this.sourceContext));
             } else if (this.pulsarSchema != null) {
@@ -152,7 +154,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
 
         List<Integer> partitionList = new LinkedList<Integer>();
         for (int i = 0; i < topicPartitionNum; i++) {
-            log.info("i: {} numInstance {} instanceId {}", i, numInstance, instanceId);
+            log.info("partition: {} numInstance {} instanceId {}", i, numInstance, instanceId);
             if (i % numInstance == instanceId) {
                 partitionList.add(i);
             }
