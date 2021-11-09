@@ -214,8 +214,8 @@ public class DeltaReader {
             Iterator<VersionLog> vlogs = deltaLog.getChanges(startVersion, false);
             while (vlogs.hasNext()) {
                 VersionLog v = vlogs.next();
-                if (v.getVersion() > startVersion) { // may not happen
-                    continue;
+                if (v.getVersion() > startVersion) {
+                    break;
                 }
                 List<Action> actions = v.getActions();
                 for (int i = 0; i < actions.size(); i++) {
@@ -226,9 +226,10 @@ public class DeltaReader {
                         ReadCursor cursor = new ReadCursor(addFile, startVersion,
                                 false, i, partitionValue);
                         Boolean matchFlag = isMatch(cursor);
-                        log.info("getChanges version: {} index: {} addFile {} dataChange {} partitionValue:{} "
+                        log.debug("getChanges version: {} index: {} "
+                                        + "actionListSize{} addFile {} dataChange {} partitionValue:{} "
                                         + "isMatch:{} modifiTime:{}",
-                                startVersion, i, addFile.getPath(),
+                                startVersion, i, actions.size(), addFile.getPath(),
                                 addFile.isDataChange(),
                                 partitionValue,
                                 matchFlag,
@@ -239,7 +240,7 @@ public class DeltaReader {
 
                     } else if (act instanceof CommitInfo) {
                         CommitInfo info = (CommitInfo) act;
-                        log.info("getChanges skip commitInfo version: {} index: {} Operation {} "
+                        log.debug("getChanges skip commitInfo version: {} index: {} Operation {} "
                                         + "operationParam {} modifiTime:{} operationMetrics:{}",
                                 startVersion, i, info.getOperation(),
                                 info.getOperationParameters().toString(),
@@ -251,7 +252,7 @@ public class DeltaReader {
                         ReadCursor cursor = new ReadCursor(removeFile, startVersion,
                                 false, i, partitionValue);
                         Boolean matchFlag = isMatch(cursor);
-                        log.info("getChanges version: {} index: {} removeFile {} dataChange {} partitionValue:{} "
+                        log.debug("getChanges version: {} index: {} removeFile {} dataChange {} partitionValue:{} "
                                         + "isMatch:{} deletionTime:{}",
                                 startVersion, i, removeFile.getPath(),
                                 removeFile.isDataChange(),
@@ -296,10 +297,12 @@ public class DeltaReader {
             } else {
                 filePath = ((AddFile) act).getPath();
             }
+            long start = System.currentTimeMillis();
             CompletableFuture<ParquetReaderUtils.Parquet> parquetFuture =
                     ParquetReaderUtils.getPargetParquetDataquetDataAsync(
                             filePath, conf, this.executorService);
             ParquetReaderUtils.Parquet parquet = parquetFuture.get();
+            log.debug("read and parse parquet file {} cost {} ms", filePath, System.currentTimeMillis() - start);
             for (int i = 0; i < parquet.getData().size(); i++) {
                 ReadCursor tmp = (ReadCursor) startCursor.clone();
                 tmp.rowNum = i;

@@ -56,8 +56,6 @@ import org.apache.pulsar.io.core.SourceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
-
 /**
  * A record wrapping an dataChange or metaChange message.
  */
@@ -81,10 +79,52 @@ public class DeltaRecord implements Record<GenericRecord> {
     private String topic;
     private DeltaReader.RowRecordData rowRecordData;
     public static Map<Integer, Long> msgSeqCntMap = new ConcurrentHashMap<>();
+    public static Map<Integer, DeltaCheckpoint> saveCheckpointMap = new ConcurrentHashMap<>();
     private SourceContext sourceContext;
     private long sequence;
     private long partition;
     private String partitionValue;
+    public static SaveCheckpointTread saveCheckpointTread;
+
+    static class SaveCheckpointTread implements Runnable {
+        SourceContext sourceContext;
+
+        public SaveCheckpointTread(SourceContext sourceContext) {
+            this.sourceContext = sourceContext;
+        }
+
+        @Override
+        public void run() {
+            Map<Integer, Long> lastSaveCheckpoint = new ConcurrentHashMap<>();
+            while (true) {
+                long start = System.currentTimeMillis();
+                saveCheckpointMap.forEach((k, v) -> {
+                    Long lastSaveTm = lastSaveCheckpoint.getOrDefault(k, 0L);
+                    Long currentTm = System.currentTimeMillis();
+                    if (currentTm - lastSaveTm < 1000 * 60) {
+                        return;
+                    }
+
+                    lastSaveCheckpoint.put(k, currentTm);
+                    ObjectMapper mapper = new ObjectMapper();
+                    try {
+                        sourceContext.putState(DeltaCheckpoint.getStatekey(k),
+                                ByteBuffer.wrap(mapper.writeValueAsBytes(v)));
+                        log.debug("ack partition {} checkpoint {}", k, v.toString());
+                    } catch (Exception e) {
+                        log.error("putState failed for partition {} sequence {} ", k, e);
+                    } finally {
+                        long end = System.currentTimeMillis();
+                        log.info("ack for partition {} sequence {} checkpoint {} cost {} ms ", k, v,  end - start);
+                    }
+                });
+                try {
+                    Thread.sleep(1000);
+                } catch (Exception e) {
+                }
+            }
+        }
+    }
 
     public DeltaRecord(DeltaReader.RowRecordData rowRecordData, String topic, StructType deltaSchema,
                        SourceContext sourceContext) throws Exception {
@@ -363,14 +403,7 @@ public class DeltaRecord implements Record<GenericRecord> {
             checkpoint.setRowNum(this.rowRecordData.nextCursor.rowNum);
             checkpoint.setSeqCount(sequence);
         }
-        ObjectMapper mapper = new ObjectMapper();
-        try {
-            sourceContext.putState(DeltaCheckpoint.getStatekey((int) partition),
-                    ByteBuffer.wrap(mapper.writeValueAsBytes(checkpoint)));
-            log.debug("ack partition {} sequence {} checkpoint {}", partition, sequence, checkpoint.toString());
-        } catch (Exception e) {
-            log.error("putState failed for partition {} sequence {} ", partition, sequence, e);
-        }
+        saveCheckpointMap.put((int) partition, checkpoint);
     }
 
     @Override

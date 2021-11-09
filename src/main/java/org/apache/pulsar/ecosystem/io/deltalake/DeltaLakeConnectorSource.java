@@ -105,6 +105,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         checkpointMap.forEach((key, value) -> {
             DeltaRecord.msgSeqCntMap.put(key, value.getSeqCount());
         });
+        DeltaRecord.saveCheckpointTread = new DeltaRecord.SaveCheckpointTread(sourceContext);
         reader.setFilter(initDeltaReadFilter(checkpointMap));
         reader.setStartCheckpoint(checkpointMap.get(minCheckpointMapKey));
         DeltaReader.topicPartitionNum = this.topicPartitionNum;
