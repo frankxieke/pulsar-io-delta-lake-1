@@ -100,12 +100,12 @@ public class DeltaReader {
         }
 
         @Override
-        protected Object clone() {
+        protected Object clone() throws CloneNotSupportedException {
             ReadCursor rc = null;
             try {
                 rc = (ReadCursor) super.clone();
             } catch (CloneNotSupportedException e) {
-                e.printStackTrace();
+                throw e;
             }
             return rc;
         }
