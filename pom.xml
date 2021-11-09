@@ -59,8 +59,6 @@
     <powermock.version>2.0.0-beta.5</powermock.version>
     <testcontainers.version>1.8.3</testcontainers.version>
     <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-    <parquet4s.core_2.12.version>1.2.1</parquet4s.core_2.12.version>
-    <jackson.module.scala.version>2.6.7.1</jackson.module.scala.version>
 
     <!-- build plugin dependencies -->
     <license.plugin.version>3.0</license.plugin.version>
@@ -189,17 +187,6 @@
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>com.fasterxml.jackson.module</groupId>
-      <artifactId>jackson-module-scala_2.12</artifactId>
-      <version>${jackson.module.scala.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>com.github.mjakubowski84</groupId>
-      <artifactId>parquet4s-core_2.12</artifactId>
-      <version>${parquet4s.core_2.12.version}</version>
     </dependency>
 
     <dependency>
