@@ -315,7 +315,7 @@ public class DeltaReader {
             }
         } else if (act instanceof  RemoveFile) {
             if (config.fileSystemType.equals(config.FileSystemType)) {
-                filePath = config.tablePath + "/" + ((AddFile) act).getPath();
+                filePath = config.tablePath + "/" + ((RemoveFile) act).getPath();
             } else {
                 filePath = ((RemoveFile) act).getPath();
             }
