@@ -29,3 +29,41 @@ Below are the sub folders and files of this project and their corresponding desc
     │   └── test // stores all related tests.
     │ 
     ```
+## Build package
+
+```bash
+mvn package
+```
+
+1. Create Source Connector using create api
+
+```bash
+bin/pulsar-admin sources update \
+--archive  {nar tarball path} \
+--source-config-file config.json \
+--classname org.apache.pulsar.ecosystem.io.deltalake.DeltaLakeConnectorSource \
+--name {connectorName}
+```
+
+in config.json, you can define the source connector config.
+
+```bash
+{
+  "tenant": "public",
+  "namespace": "default",
+  "name": "{connectorName}",
+  "topicName": "{topicName}",
+  "parallelism": 1,
+  "processing-guarantees": 2,
+  "configs":
+  {
+    "startingVersion":"0",
+    "tablePath": "{delta_path}",
+    "fileSystemType": "filesystem or s3"
+  }
+}
+```
+
+
+
+

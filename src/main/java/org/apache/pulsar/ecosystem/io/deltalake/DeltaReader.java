@@ -56,6 +56,7 @@ public class DeltaReader {
     public static long topicPartitionNum;
     public ExecutorService executorService;
     public DeltaLakeConnectorConfig config;
+    private Configuration conf;
 
 
     public static long getPartitionIdByDeltaPartitionValue(String partitionValue, long topicPartitionNum) {
@@ -284,18 +285,12 @@ public class DeltaReader {
     public List<RowRecordData> readParquetFile(ReadCursor startCursor) throws Exception {
         Action act = startCursor.act;
         List<RowRecordData> recordList = new LinkedList<>();
-        Configuration conf = new Configuration();
         String filePath;
-        if (config.fileSystemType.equals(config.S3Type)) {
-            conf.set("fs.s3a.access.key", config.s3aAccesskey);
-            conf.set("fs.s3a.secret.key", config.s3aSecretKey);
-            conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem");
-        }
         if (act instanceof AddFile) {
             if (config.fileSystemType.equals(config.FileSystemType)) {
                 filePath = config.tablePath + "/" + ((AddFile) act).getPath();
             } else {
-                filePath = ((AddFile) act).getPath();
+                filePath = config.tablePath + ((AddFile) act).getPath();
             }
             long start = System.currentTimeMillis();
             CompletableFuture<ParquetReaderUtils.Parquet> parquetFuture =
@@ -317,7 +312,7 @@ public class DeltaReader {
             if (config.fileSystemType.equals(config.FileSystemType)) {
                 filePath = config.tablePath + "/" + ((RemoveFile) act).getPath();
             } else {
-                filePath = ((RemoveFile) act).getPath();
+                filePath = config.tablePath + "/" + ((RemoveFile) act).getPath();
             }
             CompletableFuture<ParquetReaderUtils.Parquet> parquetFuture =
                     ParquetReaderUtils.getPargetParquetDataquetDataAsync(
@@ -349,7 +344,13 @@ public class DeltaReader {
     }
 
     private void open() throws Exception {
-        deltaLog = DeltaLog.forTable(new Configuration(), tablePath);
+        conf = new Configuration();
+        if (config.fileSystemType.equals(config.S3Type)) {
+            conf.set("fs.s3a.access.key", config.s3aAccesskey);
+            conf.set("fs.s3a.secret.key", config.s3aSecretKey);
+            conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem");
+        }
+        deltaLog = DeltaLog.forTable(conf, tablePath);
     }
 
     private boolean isMatch(ReadCursor cursor) {
