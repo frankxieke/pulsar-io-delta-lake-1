@@ -142,6 +142,18 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
     }
 
 
+    private void handleGetDeltaSchemaFailed(SourceContext sourceContext) throws Exception {
+        Class<?> classType = sourceContext.getClass();
+        Field adminField = classType.getDeclaredField("pulsarAdmin");
+        adminField.setAccessible(true);
+        PulsarAdmin admin = (PulsarAdmin) adminField.get(sourceContext);
+        pulsarSchema = Schema.generic(admin.schemas().getSchemaInfo(sourceContext.getOutputTopic()));
+        log.info("get latest schema from pulsar, get {}, pulsarSchema {}",
+                admin.schemas().getSchemaInfo(sourceContext.getOutputTopic()),
+                pulsarSchema);
+    }
+
+
     /**
      * get checkpoint position from pulsar function stateStore.
      * @return if this instance not own any partition, will return empty, else return the checkpoint map.
@@ -213,14 +225,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                 deltaSchema = reader.getSnapShot(startVersion).getMetadata().getSchema();
             } catch (Exception e) {
                 log.error("getSchema from snapshot {} failed, ", startVersion, e);
-                Class<?> classType = sourceContext.getClass();
-                Field adminField = classType.getDeclaredField("pulsarAdmin");
-                adminField.setAccessible(true);
-                PulsarAdmin admin = (PulsarAdmin) adminField.get(sourceContext);
-                pulsarSchema = Schema.generic(admin.schemas().getSchemaInfo(sourceContext.getOutputTopic()));
-                log.info("get latest schema from pulsar, get {}, pulsarSchema {}",
-                        admin.schemas().getSchemaInfo(sourceContext.getOutputTopic()),
-                        pulsarSchema);
+                handleGetDeltaSchemaFailed(sourceContext);
             }
             for (int i = 0; i < partitionList.size(); i++) {
                 log.info("checkpointMap not including partition {}, will start from first {}",
@@ -238,14 +243,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                 deltaSchema = reader.getSnapShot(startVersion).getMetadata().getSchema();
             } catch (Exception e) {
                 log.error("getSchema from snapshot {} failed, ", startVersion, e);
-                Class<?> classType = sourceContext.getClass();
-                Field adminField = classType.getDeclaredField("pulsarAdmin");
-                adminField.setAccessible(true);
-                PulsarAdmin admin = (PulsarAdmin) adminField.get(sourceContext);
-                pulsarSchema = Schema.generic(admin.schemas().getSchemaInfo(sourceContext.getOutputTopic()));
-                log.info("get latest schema from pulsar, get {}, pulsarSchema {}",
-                        admin.schemas().getAllSchemas(sourceContext.getOutputTopic()).get(0),
-                        pulsarSchema);
+                handleGetDeltaSchemaFailed(sourceContext);
             }
             checkpointMap.put(minCheckpointMapKey, checkpoint);
             for (int i = 0; i < partitionList.size(); i++) {

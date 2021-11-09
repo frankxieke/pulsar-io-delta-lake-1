@@ -73,7 +73,7 @@ public class DeltaReaderThread extends Thread {
                         cursor.endOfVersion = true;
                     }
                     List<DeltaReader.RowRecordData> rowRecords = reader.readParquetFile(actionList.get(i));
-                    log.info("version {} actionIndex: {} rowRecordSize {}", startVersion, i, rowRecords.size());
+                    log.debug("version {} actionIndex: {} rowRecordSize {}", startVersion, i, rowRecords.size());
                     rowRecords.forEach(source::enqueue);
                 }
                 startVersion++;
