@@ -89,14 +89,21 @@ public class DeltaRecord implements Record<GenericRecord> {
     static class SaveCheckpointTread implements Runnable {
         SourceContext sourceContext;
 
+        public void setStopped(boolean stopped) {
+            this.stopped = stopped;
+        }
+
+        boolean stopped;
         public SaveCheckpointTread(SourceContext sourceContext) {
             this.sourceContext = sourceContext;
+            this.stopped = false;
         }
+
 
         @Override
         public void run() {
             Map<Integer, Long> lastSaveCheckpoint = new ConcurrentHashMap<>();
-            while (true) {
+            while (!stopped) {
                 long start = System.currentTimeMillis();
                 saveCheckpointMap.forEach((k, v) -> {
                     Long lastSaveTm = lastSaveCheckpoint.getOrDefault(k, 0L);

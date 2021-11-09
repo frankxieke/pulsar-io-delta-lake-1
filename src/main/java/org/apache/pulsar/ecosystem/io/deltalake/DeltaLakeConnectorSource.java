@@ -125,6 +125,9 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
 
     @Override
     public void close() throws Exception {
+        this.executor.shutdown();
+        this.parseParquetExecutor.shutdown();
+        DeltaRecord.saveCheckpointTread.setStopped(true);
     }
 
     public void enqueue(DeltaReader.RowRecordData rowRecordData) {
