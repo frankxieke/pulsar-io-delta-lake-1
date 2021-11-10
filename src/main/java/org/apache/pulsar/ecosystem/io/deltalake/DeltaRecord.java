@@ -35,6 +35,7 @@ import io.delta.standalone.types.StringType;
 import io.delta.standalone.types.StructField;
 import io.delta.standalone.types.StructType;
 import io.delta.standalone.types.TimestampType;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
@@ -78,15 +79,15 @@ public class DeltaRecord implements Record<GenericRecord> {
     private static StructType deltaSchema;
     private String topic;
     private DeltaReader.RowRecordData rowRecordData;
-    public static Map<Integer, Long> msgSeqCntMap = new ConcurrentHashMap<>();
-    public static Map<Integer, DeltaCheckpoint> saveCheckpointMap = new ConcurrentHashMap<>();
+    public static Map<Integer, Long> msgSeqCntMap;
+    public static Map<Integer, DeltaCheckpoint> saveCheckpointMap;
     private SourceContext sourceContext;
     private long sequence;
     private long partition;
     private String partitionValue;
     public static SaveCheckpointTread saveCheckpointTread;
 
-    static class SaveCheckpointTread implements Runnable {
+    static class SaveCheckpointTread extends Thread {
         SourceContext sourceContext;
 
         public void setStopped(boolean stopped) {
@@ -103,6 +104,9 @@ public class DeltaRecord implements Record<GenericRecord> {
         @Override
         public void run() {
             Map<Integer, Long> lastSaveCheckpoint = new ConcurrentHashMap<>();
+            if (saveCheckpointMap == null) {
+                saveCheckpointMap = new ConcurrentHashMap<>();
+            }
             while (!stopped) {
                 long start = System.currentTimeMillis();
                 saveCheckpointMap.forEach((k, v) -> {
@@ -122,7 +126,7 @@ public class DeltaRecord implements Record<GenericRecord> {
                         log.error("putState failed for partition {} sequence {} ", k, e);
                     } finally {
                         long end = System.currentTimeMillis();
-                        log.info("ack for partition {} sequence {} checkpoint {} cost {} ms ", k, v,  end - start);
+                        log.info("ack for partition {} checkpoint {} cost {} ms ", k, v,  end - start);
                     }
                 });
                 try {
@@ -134,7 +138,7 @@ public class DeltaRecord implements Record<GenericRecord> {
     }
 
     public DeltaRecord(DeltaReader.RowRecordData rowRecordData, String topic, StructType deltaSchema,
-                       SourceContext sourceContext) throws Exception {
+                       SourceContext sourceContext) throws IOException {
         this.rowRecordData = rowRecordData;
         this.sourceContext = sourceContext;
         properties = new HashMap<>();
@@ -164,19 +168,26 @@ public class DeltaRecord implements Record<GenericRecord> {
             value = getGenericRecord(deltaSchema, null, rowRecordData);
         } else {
             log.error("DeltaRecord: Not Support this kind of record {}", rowRecordData.nextCursor.act);
-            throw new Exception("DeltaRecord: not support this kind of record");
+            throw new IOException("DeltaRecord: not support this kind of record");
         }
 
         String partitionValueStr = properties.get(PARTITION_VALUE_FIELD);
         partition = DeltaReader.getPartitionIdByDeltaPartitionValue(partitionValueStr,
                         DeltaReader.topicPartitionNum);
-        Long msgCount = msgSeqCntMap.getOrDefault(partition, 0L);
+        if (msgSeqCntMap == null) {
+            msgSeqCntMap = new ConcurrentHashMap<>();
+        }
+        if (saveCheckpointMap == null) {
+            saveCheckpointMap = new ConcurrentHashMap<>();
+        }
+        Long msgCount = msgSeqCntMap.getOrDefault((int) partition, 0L);
         sequence = msgCount++;
         msgSeqCntMap.put((int) partition, msgCount);
+
     }
 
     public DeltaRecord(DeltaReader.RowRecordData rowRecordData, String topic, GenericSchema<GenericRecord> pulsarSchema,
-                       SourceContext sourceContext) throws Exception {
+                       SourceContext sourceContext) throws IOException {
         this.s = pulsarSchema;
         this.sourceContext = sourceContext;
         properties = new HashMap<>();
@@ -202,9 +213,16 @@ public class DeltaRecord implements Record<GenericRecord> {
             value = getGenericRecord(deltaSchema, pulsarSchema, rowRecordData);
         } else {
             log.error("DeltaRecord: Not Support this kind of record {}", rowRecordData.nextCursor.act);
-            throw new Exception("DeltaRecord: not support this kind of record");
+            throw new IOException("DeltaRecord: not support this kind of record");
         }
         String partitionValueStr = properties.get(PARTITION_VALUE_FIELD);
+
+        if (msgSeqCntMap == null) {
+            msgSeqCntMap = new ConcurrentHashMap<>();
+        }
+        if (saveCheckpointMap == null) {
+            saveCheckpointMap = new ConcurrentHashMap<>();
+        }
         partition = DeltaReader.getPartitionIdByDeltaPartitionValue(partitionValueStr,
                 DeltaReader.topicPartitionNum);
         Long msgCount = msgSeqCntMap.getOrDefault(partition, 0L);
@@ -212,7 +230,7 @@ public class DeltaRecord implements Record<GenericRecord> {
         msgSeqCntMap.put((int) partition, msgCount);
     }
 
-    public static GenericSchema<GenericRecord> convertToPulsarSchema(StructType deltaSchema) throws Exception {
+    public static GenericSchema<GenericRecord> convertToPulsarSchema(StructType deltaSchema) throws IOException {
         // Try to transform schema
         RecordSchemaBuilder builder = SchemaBuilder
                 .record(deltaSchema.getTypeName());
@@ -257,7 +275,7 @@ public class DeltaRecord implements Record<GenericRecord> {
             }
         }
         if (fbuilder == null) {
-            throw new Exception("filed is empty, can not covert to pulsar schema");
+            throw new IOException("filed is empty, can not covert to pulsar schema");
         }
 
         GenericSchema<GenericRecord> t = Schema.generic(builder.build(SchemaType.AVRO));
@@ -368,7 +386,7 @@ public class DeltaRecord implements Record<GenericRecord> {
         try {
             Long s = Long.parseLong(properties.get(TS_FIELD));
             return Optional.of(s);
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
             return Optional.of(0L);
         }
     }

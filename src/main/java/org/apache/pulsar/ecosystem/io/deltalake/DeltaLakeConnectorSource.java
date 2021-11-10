@@ -22,6 +22,7 @@ package org.apache.pulsar.ecosystem.io.deltalake;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.delta.standalone.types.StructType;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -102,10 +104,12 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                     sourceContext.getInstanceId());
             return;
         }
+        DeltaRecord.msgSeqCntMap = new ConcurrentHashMap<>();
         checkpointMap.forEach((key, value) -> {
             DeltaRecord.msgSeqCntMap.put(key, value.getSeqCount());
         });
         DeltaRecord.saveCheckpointTread = new DeltaRecord.SaveCheckpointTread(sourceContext);
+        DeltaRecord.saveCheckpointTread.start();
         reader.setFilter(initDeltaReadFilter(checkpointMap));
         reader.setStartCheckpoint(checkpointMap.get(minCheckpointMapKey));
         DeltaReader.topicPartitionNum = this.topicPartitionNum;
@@ -125,9 +129,15 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
 
     @Override
     public void close() throws Exception {
-        this.executor.shutdown();
-        this.parseParquetExecutor.shutdown();
-        DeltaRecord.saveCheckpointTread.setStopped(true);
+        if (this.executor != null) {
+            this.executor.shutdown();
+        }
+        if (this.parseParquetExecutor != null) {
+            this.parseParquetExecutor.shutdown();
+        }
+        if (DeltaRecord.saveCheckpointTread != null) {
+            DeltaRecord.saveCheckpointTread.setStopped(true);
+        }
     }
 
     public void enqueue(DeltaReader.RowRecordData rowRecordData) {
@@ -140,8 +150,10 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
             } else if (this.pulsarSchema != null) {
                 this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, pulsarSchema, this.sourceContext));
             }
-        } catch (Exception ex) {
-            log.error("delta message enqueue interrupted", ex);
+        } catch (IOException ex) {
+            log.error("delta message enqueue failed for ", ex);
+        } catch (InterruptedException interruptedException) {
+            log.error("delta message enqueue interrupted", interruptedException);
         }
     }
 
@@ -192,7 +204,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                 }
             } catch (Exception e) {
                 log.error("getState exception failed for partition {} , ", i, e);
-                throw new Exception("get checkpoint from state store failed for partition " + i);
+                throw new IOException("get checkpoint from state store failed for partition " + i);
             }
             String jsonString = Charset.forName("utf-8").decode(byteBuffer).toString();
             ObjectMapper mapper = new ObjectMapper();
@@ -203,7 +215,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
             } catch (Exception e) {
                 log.error("parse the checkpoint for partition {} failed, jsonString: {}",
                         partitionList.get(i), jsonString, e);
-                throw new Exception("parse checkpoint failed");
+                throw new IOException("parse checkpoint failed");
             }
             checkpointMap.put(partitionList.get(i), tmpCheckpoint);
             if (checkpoint == null || checkpoint.compareTo(tmpCheckpoint) > 0) {
@@ -241,7 +253,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
             if (startVersion > checkpoint.getSnapShotVersion()) {
                 log.error("checkpoint version: {} not exist, current version {}",
                         checkpoint.getSnapShotVersion(), startVersion);
-                throw new Exception("last checkpoint version not exist, need to handle this manually");
+                throw new IOException("last checkpoint version not exist, need to handle this manually");
             }
             try {
                 deltaSchema = reader.getSnapShot(startVersion).getMetadata().getSchema();

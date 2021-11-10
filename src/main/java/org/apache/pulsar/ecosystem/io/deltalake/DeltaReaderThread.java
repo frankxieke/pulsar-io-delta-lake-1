@@ -39,7 +39,6 @@ public class DeltaReaderThread extends Thread {
         this.parseParquetExecutor = executor;
     }
 
-
     public void run() {
         DeltaReader reader = this.source.reader;
         DeltaCheckpoint checkpoint = source.getMinCheckpoint();

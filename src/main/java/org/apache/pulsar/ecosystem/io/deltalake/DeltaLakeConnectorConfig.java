@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.Serializable;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 import lombok.Data;
 import org.slf4j.Logger;
@@ -75,7 +76,7 @@ public class DeltaLakeConnectorConfig implements Serializable {
             } else {
                 try {
                     startingSnapShotVersionNumber = Long.parseLong(startingVersion);
-                } catch (Exception e) {
+                } catch (NumberFormatException e) {
                     log.info("parse the startingVersion {} failed ", e);
                     throw new IOException("startingVersion should be a number, parse failed");
                 }
@@ -85,7 +86,7 @@ public class DeltaLakeConnectorConfig implements Serializable {
             try {
                 Instant instant = Instant.parse(startingTimeStamp);
                 startingTimeStampSecond = instant.getEpochSecond();
-            } catch (Exception e) {
+            } catch (DateTimeParseException e) {
                 log.error("parse the startingTimestamp {} failed, ", e);
                 throw new IOException("startingTimestamp format parse failed, "
                         + "it should be like 2021-09-29T20:17:46.384Z");
