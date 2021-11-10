@@ -47,7 +47,7 @@
     <!-- connector dependencies -->
     <jackson.version>2.9.7</jackson.version>
     <lombok.version>1.16.22</lombok.version>
-    <pulsar.version>2.9.0-SNAPSHOT</pulsar.version>
+    <pulsar.version>2.9.0-rc-202110221101</pulsar.version>
 
     <parquet.version>1.11.0</parquet.version>
     <hadoop.version>3.2.1</hadoop.version>
@@ -103,7 +103,7 @@
       </dependency>
 
       <dependency>
-        <groupId>org.apache.pulsar</groupId>
+        <groupId>io.streamnative</groupId>
         <artifactId>pulsar-io-core</artifactId>
         <version>${pulsar.version}</version>
       </dependency>
@@ -180,7 +180,7 @@
 
     <!-- runtime dependencies -->
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
+      <groupId>io.streamnative</groupId>
       <artifactId>pulsar-io-core</artifactId>
     </dependency>
 
@@ -222,9 +222,10 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
+      <groupId>io.streamnative</groupId>
       <artifactId>pulsar-client</artifactId>
       <version>${pulsar.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
