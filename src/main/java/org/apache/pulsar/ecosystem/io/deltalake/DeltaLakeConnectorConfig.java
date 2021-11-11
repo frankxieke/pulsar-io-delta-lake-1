@@ -47,6 +47,8 @@ public class DeltaLakeConnectorConfig implements Serializable {
     String fileSystemType;
     String s3aAccesskey;
     String s3aSecretKey;
+    int parseParquetExcutorNum;
+    int maxReadActionSizeOneRound;
 
     @JsonIgnore
     Long startingTimeStampSecond;
@@ -61,7 +63,6 @@ public class DeltaLakeConnectorConfig implements Serializable {
         this.s3aSecretKey = "";
         this.s3aAccesskey = "";
     }
-
     /**
      * Validate if the configuration is valid.
      */
@@ -108,6 +109,15 @@ public class DeltaLakeConnectorConfig implements Serializable {
             if (s3aAccesskey.equals("") || s3aSecretKey.equals("")) {
                 throw new IOException("s3aAccesskey or s3aSecretkey should be configured for s3");
             }
+        }
+        int coreNum = Runtime.getRuntime().availableProcessors();
+        if (parseParquetExcutorNum > coreNum * 2 || parseParquetExcutorNum <= 0) {
+            this.parseParquetExcutorNum = coreNum * 2;
+            log.info("parse parquet using default {} executors", this.parseParquetExcutorNum);
+        }
+        if (maxReadActionSizeOneRound <= 0) {
+            this.maxReadActionSizeOneRound = 1000;
+            log.info("Read at most {} delta action list one round ", this.maxReadActionSizeOneRound);
         }
     }
 

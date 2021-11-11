@@ -62,6 +62,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
     private SourceContext sourceContext;
     private ExecutorService executor;
     private ExecutorService parseParquetExecutor;
+    private ExecutorService readRecordExecutor;
     private LinkedBlockingQueue<DeltaRecord> queue = new LinkedBlockingQueue<DeltaRecord>();
     private long topicPartitionNum;
     private final Map<Integer, DeltaCheckpoint> checkpointMap = new HashMap<Integer, DeltaCheckpoint>();
@@ -113,11 +114,12 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         reader.setFilter(initDeltaReadFilter(checkpointMap));
         reader.setStartCheckpoint(checkpointMap.get(minCheckpointMapKey));
         DeltaReader.topicPartitionNum = this.topicPartitionNum;
-        parseParquetExecutor = Executors.newFixedThreadPool(3);
+        parseParquetExecutor = Executors.newFixedThreadPool(config.parseParquetExcutorNum);
+        readRecordExecutor = Executors.newFixedThreadPool(config.parseParquetExcutorNum);
         reader.setExecutorService(parseParquetExecutor);
 
         executor = Executors.newFixedThreadPool(1);
-        executor.execute(new DeltaReaderThread(this, parseParquetExecutor));
+        executor.execute(new DeltaReaderThread(this, readRecordExecutor, config.maxReadActionSizeOneRound));
     }
 
     @Override
@@ -134,6 +136,9 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         }
         if (this.parseParquetExecutor != null) {
             this.parseParquetExecutor.shutdown();
+        }
+        if (this.readRecordExecutor != null) {
+            this.readRecordExecutor.shutdown();
         }
         if (DeltaRecord.saveCheckpointTread != null) {
             DeltaRecord.saveCheckpointTread.setStopped(true);

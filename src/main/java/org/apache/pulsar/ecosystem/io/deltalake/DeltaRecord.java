@@ -183,7 +183,6 @@ public class DeltaRecord implements Record<GenericRecord> {
         Long msgCount = msgSeqCntMap.getOrDefault((int) partition, 0L);
         sequence = msgCount++;
         msgSeqCntMap.put((int) partition, msgCount);
-
     }
 
     public DeltaRecord(DeltaReader.RowRecordData rowRecordData, String topic, GenericSchema<GenericRecord> pulsarSchema,

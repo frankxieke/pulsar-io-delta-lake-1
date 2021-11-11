@@ -36,11 +36,15 @@ import org.apache.parquet.io.MessageColumnIO;
 import org.apache.parquet.io.RecordReader;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.Type;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The parquet file read util.
  */
 public class ParquetReaderUtils {
+    private static final Logger log = LoggerFactory.getLogger(ParquetReaderUtils.class);
+
     /**
      * The parquet file return.
      */

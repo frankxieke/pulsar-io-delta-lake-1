@@ -27,6 +27,7 @@ import io.delta.standalone.actions.AddFile;
 import io.delta.standalone.actions.CommitInfo;
 import io.delta.standalone.actions.Metadata;
 import io.delta.standalone.actions.RemoveFile;
+import java.io.IOException;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -196,8 +197,23 @@ public class DeltaReader {
         return s;
     }
 
-    public List<ReadCursor> getDeltaActionFromSnapShotVersion(Long startVersion,
-                                                             boolean isFullSnapshot) throws Exception {
+    public CompletableFuture<List<ReadCursor>> getDeltaActionFromSnapShotVersionAsync(Long startVersion,
+                                            Long maxActionSize, boolean isFullSnapshot) throws Exception {
+        CompletableFuture<List<ReadCursor>> cf = new CompletableFuture<>();
+        CompletableFuture.runAsync(() -> {
+            try {
+                List<ReadCursor> readCursorList =
+                        getDeltaActionFromSnapShotVersion(startVersion, maxActionSize, isFullSnapshot);
+                cf.complete(readCursorList);
+
+            } catch (Exception e) {
+                cf.completeExceptionally(e);
+            }
+        });
+        return cf;
+    }
+    public List<ReadCursor> getDeltaActionFromSnapShotVersion(Long startVersion, Long maxActionSize,
+                                                             boolean isFullSnapshot) {
         List<ReadCursor> actionList = new LinkedList<>();
         if (isFullSnapshot) {
             Snapshot snapshot = deltaLog.getSnapshotForVersionAsOf(startVersion);
@@ -212,25 +228,31 @@ public class DeltaReader {
                 }
             }
         } else {
+            long prevVersion = startVersion;
+            long start = System.currentTimeMillis();
             Iterator<VersionLog> vlogs = deltaLog.getChanges(startVersion, false);
             while (vlogs.hasNext()) {
                 VersionLog v = vlogs.next();
-                if (v.getVersion() > startVersion) {
+                if (v.getVersion() > prevVersion && actionList.size() >= maxActionSize) {
+                    long end = System.currentTimeMillis();
+                    log.debug("get changes {} cost {} ms total {} actions",
+                            v.getVersion(), end - start, actionList.size());
                     break;
                 }
+                prevVersion = v.getVersion();
                 List<Action> actions = v.getActions();
                 for (int i = 0; i < actions.size(); i++) {
                     Action act = actions.get(i);
                     if (act instanceof AddFile) {
                         AddFile addFile = (AddFile) act;
                         String partitionValue = partitionValueToString(addFile.getPartitionValues());
-                        ReadCursor cursor = new ReadCursor(addFile, startVersion,
+                        ReadCursor cursor = new ReadCursor(addFile, v.getVersion(),
                                 false, i, partitionValue);
                         Boolean matchFlag = isMatch(cursor);
                         log.debug("getChanges version: {} index: {} "
                                         + "actionListSize{} addFile {} dataChange {} partitionValue:{} "
                                         + "isMatch:{} modifiTime:{}",
-                                startVersion, i, actions.size(), addFile.getPath(),
+                                v.getVersion(), i, actions.size(), addFile.getPath(),
                                 addFile.isDataChange(),
                                 partitionValue,
                                 matchFlag,
@@ -238,7 +260,6 @@ public class DeltaReader {
                         if (matchFlag) {
                             actionList.add(cursor);
                         }
-
                     } else if (act instanceof CommitInfo) {
                         CommitInfo info = (CommitInfo) act;
                         log.debug("getChanges skip commitInfo version: {} index: {} Operation {} "
@@ -250,12 +271,12 @@ public class DeltaReader {
                     } else if (act instanceof RemoveFile) {
                         RemoveFile removeFile = (RemoveFile) act;
                         String partitionValue = partitionValueToString(removeFile.getPartitionValues());
-                        ReadCursor cursor = new ReadCursor(removeFile, startVersion,
+                        ReadCursor cursor = new ReadCursor(removeFile, v.getVersion(),
                                 false, i, partitionValue);
                         Boolean matchFlag = isMatch(cursor);
                         log.debug("getChanges version: {} index: {} removeFile {} dataChange {} partitionValue:{} "
                                         + "isMatch:{} deletionTime:{}",
-                                startVersion, i, removeFile.getPath(),
+                                v.getVersion(), i, removeFile.getPath(),
                                 removeFile.isDataChange(),
                                 partitionValue, matchFlag,
                                 removeFile.getDeletionTimestamp());
@@ -266,11 +287,11 @@ public class DeltaReader {
                         Metadata meta = (Metadata) act;
                             log.info("getChanges version: {} index: {} metadataChange schema:{} partitionColum:{}"
                                         + " format:{} createTime:{}",
-                                startVersion, i, meta.getSchema().getTreeString(),
+                                v.getVersion(), i, meta.getSchema().getTreeString(),
                                 meta.getPartitionColumns().toString(),
                                 meta.getFormat(),
                                 meta.getCreatedTime());
-                        ReadCursor cursor = new ReadCursor(meta, startVersion,
+                        ReadCursor cursor = new ReadCursor(meta, v.getVersion(),
                                 false, i, "");
                         actionList.add(cursor);
                     } else {
@@ -282,54 +303,71 @@ public class DeltaReader {
         return actionList;
     }
 
-    public List<RowRecordData> readParquetFile(ReadCursor startCursor) throws Exception {
-        Action act = startCursor.act;
-        List<RowRecordData> recordList = new LinkedList<>();
-        String filePath;
-        if (act instanceof AddFile) {
-            if (config.fileSystemType.equals(config.FileSystemType)) {
-                filePath = config.tablePath + "/" + ((AddFile) act).getPath();
-            } else {
-                filePath = config.tablePath + ((AddFile) act).getPath();
-            }
-            long start = System.currentTimeMillis();
-            CompletableFuture<ParquetReaderUtils.Parquet> parquetFuture =
-                    ParquetReaderUtils.getPargetParquetDataquetDataAsync(
-                            filePath, conf, this.executorService);
-            ParquetReaderUtils.Parquet parquet = parquetFuture.get();
-            log.debug("read and parse parquet file {} cost {} ms", filePath, System.currentTimeMillis() - start);
-            for (int i = 0; i < parquet.getData().size(); i++) {
-                ReadCursor tmp = (ReadCursor) startCursor.clone();
-                tmp.rowNum = i;
-                if (i == parquet.getData().size() - 1) {
-                    tmp.endOfFile = true;
+    public CompletableFuture<List<RowRecordData>> readParquetFileAsync(ReadCursor startCursor,
+                    ExecutorService executorService) throws Exception {
+        CompletableFuture<List<RowRecordData>> cf = new CompletableFuture<>();
+        CompletableFuture.runAsync(()-> {
+            Action act = startCursor.act;
+            List<RowRecordData> recordList = new LinkedList<>();
+            String filePath;
+            if (act instanceof AddFile) {
+                if (config.fileSystemType.equals(config.FileSystemType)) {
+                    filePath = config.tablePath + "/" + ((AddFile) act).getPath();
+                } else {
+                    filePath = config.tablePath + ((AddFile) act).getPath();
                 }
-                if (isMatch(tmp)) {
-                    recordList.add(new RowRecordData(tmp, parquet.getData().get(i), parquet.getSchema()));
+                long start = System.currentTimeMillis();
+                ParquetReaderUtils.Parquet parquet = null;
+                try {
+                    parquet = ParquetReaderUtils.getPargetParquetDataquetData(filePath, conf);
+                } catch (IOException e) {
+                    cf.completeExceptionally(e);
+                    return;
                 }
-            }
-        } else if (act instanceof  RemoveFile) {
-            if (config.fileSystemType.equals(config.FileSystemType)) {
-                filePath = config.tablePath + "/" + ((RemoveFile) act).getPath();
-            } else {
-                filePath = config.tablePath + "/" + ((RemoveFile) act).getPath();
-            }
-            CompletableFuture<ParquetReaderUtils.Parquet> parquetFuture =
-                    ParquetReaderUtils.getPargetParquetDataquetDataAsync(
-                            filePath, conf, this.executorService);
-            ParquetReaderUtils.Parquet parquet = parquetFuture.get();
-            for (int i = 0; i < parquet.getData().size(); i++) {
+                log.debug("read and parse parquet file {} cost {} ms", filePath, System.currentTimeMillis() - start);
+                for (int i = 0; i < parquet.getData().size(); i++) {
+                    ReadCursor tmp;
+                    try {
+                        tmp = (ReadCursor) startCursor.clone();
+                    } catch (CloneNotSupportedException e) {
+                        cf.completeExceptionally(e);
+                        return;
+                    }
+                    tmp.rowNum = i;
+                    if (i == parquet.getData().size() - 1) {
+                        tmp.endOfFile = true;
+                    }
+                    if (isMatch(tmp)) {
+                        recordList.add(new RowRecordData(tmp, parquet.getData().get(i), parquet.getSchema()));
+                    }
+                }
+            } else if (act instanceof RemoveFile) {
+                if (config.fileSystemType.equals(config.FileSystemType)) {
+                    filePath = config.tablePath + "/" + ((RemoveFile) act).getPath();
+                } else {
+                    filePath = config.tablePath + "/" + ((RemoveFile) act).getPath();
+                }
+                ParquetReaderUtils.Parquet parquet = null;
+                try {
+                    parquet = ParquetReaderUtils.getPargetParquetDataquetData (filePath, conf);
+                } catch (IOException e) {
+                    cf.completeExceptionally(e);
+                    return;
+                }
+                for (int i = 0; i < parquet.getData().size(); i++) {
+                    ReadCursor tmp = startCursor;
+                    tmp.rowNum = i;
+                    if (isMatch(tmp)) {
+                        recordList.add(new RowRecordData(tmp, parquet.getData().get(i), parquet.getSchema()));
+                    }
+                }
+            } else if (act instanceof CommitInfo) {
                 ReadCursor tmp = startCursor;
-                tmp.rowNum = i;
-                if (isMatch(tmp)) {
-                    recordList.add(new RowRecordData(tmp, parquet.getData().get(i), parquet.getSchema()));
-                }
+                recordList.add(new RowRecordData(tmp, null));
             }
-        } else if (act instanceof CommitInfo) {
-            ReadCursor tmp = startCursor;
-            recordList.add(new RowRecordData(tmp, null));
-        }
-        return recordList;
+            cf.complete(recordList);
+        }, executorService);
+        return cf;
     }
 
     public static String partitionValueToString(Map<String, String> partitionValue) {
