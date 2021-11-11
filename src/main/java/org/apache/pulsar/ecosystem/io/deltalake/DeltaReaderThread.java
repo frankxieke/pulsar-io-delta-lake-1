@@ -22,7 +22,9 @@ import io.delta.standalone.actions.Metadata;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,13 +37,15 @@ public class DeltaReaderThread extends Thread {
     private boolean stopped;
     private ExecutorService readExecutor;
     private static long maxReadActionSizeOneRound;
+    private AtomicInteger processingException;
 
     public DeltaReaderThread(DeltaLakeConnectorSource source, ExecutorService executor,
-                             long maxReadActionSizeOneRound) {
+                             long maxReadActionSizeOneRound, AtomicInteger processingException) {
         this.source = source;
         this.stopped = false;
         this.readExecutor = executor;
         this.maxReadActionSizeOneRound = maxReadActionSizeOneRound;
+        this.processingException = processingException;
     }
 
     public void run() {
@@ -110,9 +114,14 @@ public class DeltaReaderThread extends Thread {
                 long end = System.currentTimeMillis();
                 log.debug("parse all files cost {} ms, total record: {} totalFiles {}",
                         end - start, totalSize, futureList.size());
-            } catch (Exception ex) {
-                log.error("read data from delta lake error.", ex);
+            } catch (InterruptedException | ExecutionException ex) {
+                log.error("read data from delta lake error, will mark processingException", ex);
                 close();
+                this.processingException.incrementAndGet();
+            } catch (Exception e) {
+                log.error("read data from delta lake error, will mark processingException", e);
+                close();
+                this.processingException.incrementAndGet();
             }
         }
     }

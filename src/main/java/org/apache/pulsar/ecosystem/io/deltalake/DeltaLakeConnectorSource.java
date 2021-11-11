@@ -36,6 +36,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -68,6 +70,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
     private final Map<Integer, DeltaCheckpoint> checkpointMap = new HashMap<Integer, DeltaCheckpoint>();
     public DeltaReader reader;
     private String destinationTopic;
+    private AtomicInteger processingException = new AtomicInteger(0);
     private long readCnt = 0;
     private long sendCnt = 0;
 
@@ -119,18 +122,23 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         reader.setExecutorService(parseParquetExecutor);
 
         executor = Executors.newFixedThreadPool(1);
-        executor.execute(new DeltaReaderThread(this, readRecordExecutor, config.maxReadActionSizeOneRound));
+        executor.execute(new DeltaReaderThread(this, readRecordExecutor,
+                config.maxReadActionSizeOneRound, this.processingException));
     }
 
     @Override
     public Record<GenericRecord> read() throws Exception {
+        if (this.processingException.get() > 0) {
+            log.info("processing encounter exception will stop reading record and connector will exit");
+            throw new Exception("processing exception in processing delta record");
+        }
         readCnt++;
-        DeltaRecord deltaRecord = this.queue.take();
+        DeltaRecord deltaRecord = this.queue.poll(100, TimeUnit.MILLISECONDS);
         return deltaRecord;
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() {
         if (this.executor != null) {
             this.executor.shutdown();
         }
@@ -151,14 +159,21 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                     rowRecordData.nextCursor.toString(), this.destinationTopic,
                     rowRecordData.simpleGroup.toString(), sendCnt++, readCnt);
             if (this.deltaSchema != null) {
-                this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, deltaSchema, this.sourceContext));
+                this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, deltaSchema,
+                        this.sourceContext, processingException));
             } else if (this.pulsarSchema != null) {
-                this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, pulsarSchema, this.sourceContext));
+                this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, pulsarSchema,
+                        this.sourceContext, processingException));
             }
         } catch (IOException ex) {
             log.error("delta message enqueue failed for ", ex);
+            processingException.incrementAndGet();
         } catch (InterruptedException interruptedException) {
             log.error("delta message enqueue interrupted", interruptedException);
+            processingException.incrementAndGet();
+        } catch (NullPointerException npe) { // will not happen
+            log.error("delta message enqueue failed, ", npe);
+            processingException.incrementAndGet();
         }
     }
 
@@ -207,7 +222,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                             partitionList.get(i));
                     continue;
                 }
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.error("getState exception failed for partition {} , ", i, e);
                 throw new IOException("get checkpoint from state store failed for partition " + i);
             }
@@ -217,7 +232,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
             try {
                 mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
                 tmpCheckpoint = mapper.readValue(jsonString, DeltaCheckpoint.class);
-            } catch (Exception e) {
+            } catch (IOException e) {
                 log.error("parse the checkpoint for partition {} failed, jsonString: {}",
                         partitionList.get(i), jsonString, e);
                 throw new IOException("parse checkpoint failed");
@@ -244,7 +259,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
             checkpointMap.put(minCheckpointMapKey, checkpoint);
             try {
                 deltaSchema = reader.getSnapShot(startVersion).getMetadata().getSchema();
-            } catch (Exception e) {
+            } catch (IllegalArgumentException e) {
                 log.error("getSchema from snapshot {} failed, ", startVersion, e);
                 handleGetDeltaSchemaFailed(sourceContext);
             }
@@ -262,7 +277,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
             }
             try {
                 deltaSchema = reader.getSnapShot(startVersion).getMetadata().getSchema();
-            } catch (Exception e) {
+            } catch (IllegalArgumentException e) {
                 log.error("getSchema from snapshot {} failed, ", startVersion, e);
                 handleGetDeltaSchemaFailed(sourceContext);
             }

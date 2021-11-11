@@ -42,6 +42,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Data;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.Schema;
@@ -86,6 +87,7 @@ public class DeltaRecord implements Record<GenericRecord> {
     private long partition;
     private String partitionValue;
     public static SaveCheckpointTread saveCheckpointTread;
+    private AtomicInteger processingException;
 
     static class SaveCheckpointTread extends Thread {
         SourceContext sourceContext;
@@ -138,9 +140,10 @@ public class DeltaRecord implements Record<GenericRecord> {
     }
 
     public DeltaRecord(DeltaReader.RowRecordData rowRecordData, String topic, StructType deltaSchema,
-                       SourceContext sourceContext) throws IOException {
+                       SourceContext sourceContext, AtomicInteger processingException) throws IOException {
         this.rowRecordData = rowRecordData;
         this.sourceContext = sourceContext;
+        this.processingException = processingException;
         properties = new HashMap<>();
         this.topic = topic;
         if (this.deltaSchema != deltaSchema && deltaSchema != null) {
@@ -186,9 +189,10 @@ public class DeltaRecord implements Record<GenericRecord> {
     }
 
     public DeltaRecord(DeltaReader.RowRecordData rowRecordData, String topic, GenericSchema<GenericRecord> pulsarSchema,
-                       SourceContext sourceContext) throws IOException {
+                       SourceContext sourceContext, AtomicInteger processingException) throws IOException {
         this.s = pulsarSchema;
         this.sourceContext = sourceContext;
+        this.processingException = processingException;
         properties = new HashMap<>();
         this.topic = topic;
 
@@ -332,7 +336,7 @@ public class DeltaRecord implements Record<GenericRecord> {
             org.apache.avro.Schema avroSchema =
                     parser.parse(new String(pulsarSchema.getSchemaInfo().getSchema(),
                             java.nio.charset.StandardCharsets.UTF_8));
-            log.info("parquet Schema: {} {}", rowRecordData.parquetSchema, pulsarSchema.getSchemaInfo());
+            log.info("parquet Schema: {} schemaInfo: {}", rowRecordData.parquetSchema, pulsarSchema.getSchemaInfo());
             for (int i = 0; i < avroSchema.getFields().size() && i < rowRecordData.parquetSchema.size(); i++) {
                 org.apache.avro.Schema.Field field = avroSchema.getFields().get(i);
                   Object value;
@@ -348,7 +352,6 @@ public class DeltaRecord implements Record<GenericRecord> {
                   } else if (type == org.apache.avro.Schema.Type.DOUBLE) {
                       value = rowRecordData.simpleGroup.getDouble(i, 0);
                   } else {
-                      log.info("i:{} otherType {}", i, type);
                       value = rowRecordData.simpleGroup.getValueToString(i, 0);
                   }
                   builder.set(field.name(), value);
@@ -433,6 +436,7 @@ public class DeltaRecord implements Record<GenericRecord> {
     @Override
     public void fail() {
         log.info("send message partition {} sequence {} failed", partition, sequence);
+        processingException.incrementAndGet();
     }
 
     @Override

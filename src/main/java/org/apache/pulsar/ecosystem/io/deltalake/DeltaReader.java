@@ -64,6 +64,9 @@ public class DeltaReader {
         if (partitionValue == null) {
             partitionValue = "";
         }
+        if (topicPartitionNum == 0) {
+            return 0;
+        }
         return Murmur32Hash.getInstance().makeHash(partitionValue.getBytes())
                 % topicPartitionNum;
     }
@@ -147,7 +150,7 @@ public class DeltaReader {
             s = deltaLog.getSnapshotForTimestampAsOf(timeStamp);
             long v = s.getVersion();
             return v;
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             try {
                 s = deltaLog.update();
                 long v = s.getVersion();
@@ -178,7 +181,7 @@ public class DeltaReader {
             }
             s = deltaLog.getSnapshotForVersionAsOf(snapShotVersion);
             return s.getVersion();
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             try {
                 s = deltaLog.update();
                 long v = s.getVersion();
@@ -198,15 +201,14 @@ public class DeltaReader {
     }
 
     public CompletableFuture<List<ReadCursor>> getDeltaActionFromSnapShotVersionAsync(Long startVersion,
-                                            Long maxActionSize, boolean isFullSnapshot) throws Exception {
+                                            Long maxActionSize, boolean isFullSnapshot) {
         CompletableFuture<List<ReadCursor>> cf = new CompletableFuture<>();
         CompletableFuture.runAsync(() -> {
             try {
                 List<ReadCursor> readCursorList =
                         getDeltaActionFromSnapShotVersion(startVersion, maxActionSize, isFullSnapshot);
                 cf.complete(readCursorList);
-
-            } catch (Exception e) {
+            } catch (IllegalArgumentException | IllegalStateException e) {
                 cf.completeExceptionally(e);
             }
         });
@@ -304,7 +306,7 @@ public class DeltaReader {
     }
 
     public CompletableFuture<List<RowRecordData>> readParquetFileAsync(ReadCursor startCursor,
-                    ExecutorService executorService) throws Exception {
+                    ExecutorService executorService) {
         CompletableFuture<List<RowRecordData>> cf = new CompletableFuture<>();
         CompletableFuture.runAsync(()-> {
             Action act = startCursor.act;
