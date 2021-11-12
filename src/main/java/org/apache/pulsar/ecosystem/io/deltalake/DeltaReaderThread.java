@@ -55,13 +55,14 @@ public class DeltaReaderThread extends Thread {
         Long startVersion = nextVersion;
         CompletableFuture<List<DeltaReader.ReadCursor>> actionListFuture = null;
         List<DeltaReader.ReadCursor> actionList = null;
+        boolean isFullCopyPeriod = checkpoint.isFullCopy();
         while (!stopped) {
             try {
                 startVersion = nextVersion;
                 log.debug("begin to read version {} ", startVersion);
                 if (actionListFuture == null) {
                     actionList = reader.getDeltaActionFromSnapShotVersion(
-                            startVersion, maxReadActionSizeOneRound, checkpoint.isFullCopy());
+                            startVersion, maxReadActionSizeOneRound, isFullCopyPeriod);
                 } else {
                     actionList = actionListFuture.get();
                     actionListFuture = null;
@@ -83,8 +84,12 @@ public class DeltaReaderThread extends Thread {
 
                 // get the last action snapshot version as the nextVersion
                 nextVersion = actionList.get(actionList.size() - 1).getVersion() + 1;
+                if (isFullCopyPeriod) {
+                    log.info("begin to change from fullCopy mode to incrCopy mode, incrCopy version {}", nextVersion);
+                    isFullCopyPeriod = false;
+                }
                 actionListFuture = reader.getDeltaActionFromSnapShotVersionAsync(nextVersion,
-                        maxReadActionSizeOneRound, checkpoint.isFullCopy());
+                        maxReadActionSizeOneRound, isFullCopyPeriod);
 
                 List<CompletableFuture<List<DeltaReader.RowRecordData>>> futureList = new ArrayList<>();
                 long start = System.currentTimeMillis();

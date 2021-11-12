@@ -36,7 +36,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import lombok.AccessLevel;
@@ -133,12 +132,13 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
             throw new Exception("processing exception in processing delta record");
         }
         readCnt++;
-        DeltaRecord deltaRecord = this.queue.poll(100, TimeUnit.MILLISECONDS);
+        DeltaRecord deltaRecord = this.queue.take();
         return deltaRecord;
     }
 
     @Override
     public void close() {
+        log.info("close source connector");
         if (this.executor != null) {
             this.executor.shutdown();
         }

@@ -25,6 +25,7 @@ import io.delta.standalone.VersionLog;
 import io.delta.standalone.actions.Action;
 import io.delta.standalone.actions.AddFile;
 import io.delta.standalone.actions.CommitInfo;
+import io.delta.standalone.actions.FileAction;
 import io.delta.standalone.actions.Metadata;
 import io.delta.standalone.actions.RemoveFile;
 import java.io.IOException;
@@ -312,12 +313,8 @@ public class DeltaReader {
             Action act = startCursor.act;
             List<RowRecordData> recordList = new LinkedList<>();
             String filePath;
-            if (act instanceof AddFile) {
-                if (config.fileSystemType.equals(config.FileSystemType)) {
-                    filePath = config.tablePath + "/" + ((AddFile) act).getPath();
-                } else {
-                    filePath = config.tablePath + ((AddFile) act).getPath();
-                }
+            if (act instanceof AddFile || act instanceof RemoveFile) {
+                filePath = config.tablePath + "/" + ((FileAction) act).getPath();
                 long start = System.currentTimeMillis();
                 ParquetReaderUtils.Parquet parquet = null;
                 try {
@@ -339,26 +336,6 @@ public class DeltaReader {
                     if (i == parquet.getData().size() - 1) {
                         tmp.endOfFile = true;
                     }
-                    if (isMatch(tmp)) {
-                        recordList.add(new RowRecordData(tmp, parquet.getData().get(i), parquet.getSchema()));
-                    }
-                }
-            } else if (act instanceof RemoveFile) {
-                if (config.fileSystemType.equals(config.FileSystemType)) {
-                    filePath = config.tablePath + "/" + ((RemoveFile) act).getPath();
-                } else {
-                    filePath = config.tablePath + "/" + ((RemoveFile) act).getPath();
-                }
-                ParquetReaderUtils.Parquet parquet = null;
-                try {
-                    parquet = ParquetReaderUtils.getPargetParquetDataquetData (filePath, conf);
-                } catch (IOException e) {
-                    cf.completeExceptionally(e);
-                    return;
-                }
-                for (int i = 0; i < parquet.getData().size(); i++) {
-                    ReadCursor tmp = startCursor;
-                    tmp.rowNum = i;
                     if (isMatch(tmp)) {
                         recordList.add(new RowRecordData(tmp, parquet.getData().get(i), parquet.getSchema()));
                     }
