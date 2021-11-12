@@ -221,7 +221,7 @@ public class DeltaReader {
         if (isFullSnapshot) {
             Snapshot snapshot = deltaLog.getSnapshotForVersionAsOf(startVersion);
             List<AddFile> addFiles = snapshot.getAllFiles();
-            log.debug("allAddFile: {} startVersion: {}", addFiles, startVersion);
+            log.debug("getFullSnapshot allAddFile: {} startVersion: {}", addFiles, startVersion);
             for (int i = 0; i < addFiles.size(); i++) {
                 AddFile add = addFiles.get(i);
                 String partitionValue = partitionValueToString(add.getPartitionValues());

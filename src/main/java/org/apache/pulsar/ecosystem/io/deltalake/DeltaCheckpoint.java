@@ -20,12 +20,16 @@
 package org.apache.pulsar.ecosystem.io.deltalake;
 
 import lombok.Data;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The delta checkpoint position.
  */
 @Data
 public class DeltaCheckpoint implements Comparable<DeltaCheckpoint> {
+    private static final Logger log = LoggerFactory.getLogger(DeltaCheckpoint.class);
+
     public static final String CheckpointStateKeyFormat = "checkpoint%d";
     public static final Long LatestSnapShotVersion = -1L;
 
@@ -77,9 +81,9 @@ public class DeltaCheckpoint implements Comparable<DeltaCheckpoint> {
     public int compareTo(DeltaCheckpoint o) {
         if (!this.state.equals(o.state)) {
             if (this.state.equals(StateType.FULL_COPY)) {
-                return 1;
-            } else {
                 return -1;
+            } else {
+                return 1;
             }
         }
         if (snapShotVersion != o.snapShotVersion) {
