@@ -86,13 +86,27 @@ public class DeltaCheckpoint implements Comparable<DeltaCheckpoint> {
                 return 1;
             }
         }
-        if (snapShotVersion != o.snapShotVersion) {
+        if (!snapShotVersion.equals(o.snapShotVersion)) {
             return snapShotVersion.compareTo(o.snapShotVersion);
         }
-        if (metadataChangeFileIndex != o.metadataChangeFileIndex) {
+        if (!metadataChangeFileIndex.equals(o.metadataChangeFileIndex)) {
             return metadataChangeFileIndex.compareTo(o.metadataChangeFileIndex);
         }
         return rowNum.compareTo(o.rowNum);
+    }
+    public int compareVersionAndIndex(DeltaCheckpoint o) {
+        if (!this.state.equals(o.state)) {
+            if (this.state.equals(StateType.FULL_COPY)) {
+                return -1;
+            } else {
+                return 1;
+            }
+        }
+        if (!snapShotVersion.equals(o.snapShotVersion)) {
+            return snapShotVersion.compareTo(o.snapShotVersion);
+        }
+
+        return metadataChangeFileIndex.compareTo(o.metadataChangeFileIndex);
     }
 
     public Boolean isFullCopy() {

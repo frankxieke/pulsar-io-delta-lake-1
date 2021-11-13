@@ -101,7 +101,21 @@ public class DeltaRecord implements Record<GenericRecord> {
             this.sourceContext = sourceContext;
             this.stopped = false;
         }
-
+        public void saveCheckpoint() {
+            if (saveCheckpointMap == null) {
+                return;
+            }
+            saveCheckpointMap.forEach((k, v) -> {
+                ObjectMapper mapper = new ObjectMapper();
+                try {
+                    sourceContext.putState(DeltaCheckpoint.getStatekey(k),
+                            ByteBuffer.wrap(mapper.writeValueAsBytes(v)));
+                    log.info("saveCheckpoint for partition {} checkpoint {}", k, v.toString());
+                } catch (Exception e) {
+                    log.error("saveCheckpoint failed in closing period for partition {} sequence {} ", k, e);
+                }
+            });
+        }
 
         @Override
         public void run() {
@@ -395,7 +409,7 @@ public class DeltaRecord implements Record<GenericRecord> {
 
     @Override
     public Optional<String> getPartitionId() {
-        return Optional.empty();
+        return Optional.of(String.format("%s-%d", topic, partition));
     }
 
     @Override
@@ -405,7 +419,6 @@ public class DeltaRecord implements Record<GenericRecord> {
 
     @Override
     public Optional<Long> getRecordSequence() {
-
         return Optional.of(sequence);
     }
 

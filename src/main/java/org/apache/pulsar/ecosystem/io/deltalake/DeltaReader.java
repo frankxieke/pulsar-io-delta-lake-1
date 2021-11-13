@@ -93,16 +93,7 @@ public class DeltaReader {
             this.isFullSnapShot = isFullSnapShot;
             this.changeIndex = changeIndex;
             this.partitionValue = partitionValue;
-            this.rowNum = 0;
-        }
-        public ReadCursor(Action act, Long version, Boolean isFullSnapShot,
-                          long changeIndex, String partitionValue, long rowNum) {
-            this.act = act;
-            this.version = version;
-            this.isFullSnapShot = isFullSnapShot;
-            this.changeIndex = changeIndex;
-            this.partitionValue = partitionValue;
-            this.rowNum = rowNum;
+            this.rowNum = -1;
         }
 
         @Override
@@ -221,7 +212,7 @@ public class DeltaReader {
         if (isFullSnapshot) {
             Snapshot snapshot = deltaLog.getSnapshotForVersionAsOf(startVersion);
             List<AddFile> addFiles = snapshot.getAllFiles();
-            log.debug("getFullSnapshot allAddFile: {} startVersion: {}", addFiles, startVersion);
+            log.info("getFullSnapshot allAddFile: {} startVersion: {}", addFiles.size(), startVersion);
             for (int i = 0; i < addFiles.size(); i++) {
                 AddFile add = addFiles.get(i);
                 String partitionValue = partitionValueToString(add.getPartitionValues());

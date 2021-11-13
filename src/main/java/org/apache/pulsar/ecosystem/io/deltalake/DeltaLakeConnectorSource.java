@@ -73,6 +73,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
     private long readCnt = 0;
     private long sendCnt = 0;
 
+
     public void setDeltaSchema(StructType deltaSchema) {
         log.info("update pulsar schema from {} to {}", this.deltaSchema.getTreeString(), deltaSchema.getTreeString());
         this.deltaSchema = deltaSchema;
@@ -109,6 +110,9 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         }
         DeltaRecord.msgSeqCntMap = new ConcurrentHashMap<>();
         checkpointMap.forEach((key, value) -> {
+            if (key > 0) {
+                log.info("partition {} sequence start from {} checkpoint {}", key, value.getSeqCount(), value);
+            }
             DeltaRecord.msgSeqCntMap.put(key, value.getSeqCount());
         });
         DeltaRecord.saveCheckpointTread = new DeltaRecord.SaveCheckpointTread(sourceContext);
@@ -139,6 +143,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
     @Override
     public void close() {
         log.info("close source connector");
+        DeltaRecord.saveCheckpointTread.saveCheckpoint();
         if (this.executor != null) {
             this.executor.shutdown();
         }
@@ -155,9 +160,11 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
 
     public void enqueue(DeltaReader.RowRecordData rowRecordData) {
         try {
-            log.debug("enqueue : {} {} [{}] putcount:{} readcount {}",
-                    rowRecordData.nextCursor.toString(), this.destinationTopic,
-                    rowRecordData.simpleGroup.toString(), sendCnt++, readCnt);
+            sendCnt++;
+            log.debug("enqueue: seq {} version {} changeIndex {} rowNum {} topic {} putcount:{} readcount {}",
+                    DeltaRecord.msgSeqCntMap.get(0), rowRecordData.nextCursor.getVersion(),
+                    rowRecordData.nextCursor.getChangeIndex(),
+                    rowRecordData.nextCursor.getRowNum(), this.destinationTopic, sendCnt, readCnt);
             if (this.deltaSchema != null) {
                 this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, deltaSchema,
                         this.sourceContext, processingException));
@@ -223,8 +230,8 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                     continue;
                 }
             } catch (RuntimeException e) {
-                log.error("getState exception failed for partition {} , ", i, e);
-                throw new IOException("get checkpoint from state store failed for partition " + i);
+                log.error("getState exception failed for partition {} , ", partitionList.get(i), e);
+                throw new IOException("get checkpoint from state store failed for partition " + partitionList.get(i));
             }
             String jsonString = Charset.forName("utf-8").decode(byteBuffer).toString();
             ObjectMapper mapper = new ObjectMapper();
@@ -236,6 +243,9 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                 log.error("parse the checkpoint for partition {} failed, jsonString: {}",
                         partitionList.get(i), jsonString, e);
                 throw new IOException("parse checkpoint failed");
+            } finally {
+                log.info("getcheckpoint from pulsar for partition {} checkpoint {}",
+                        partitionList.get(i), tmpCheckpoint);
             }
             checkpointMap.put(partitionList.get(i), tmpCheckpoint);
             if (checkpoint == null || checkpoint.compareTo(tmpCheckpoint) > 0) {
@@ -314,14 +324,20 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                 newCheckPoint = new DeltaCheckpoint(DeltaCheckpoint.StateType.INCREMENTAL_COPY, readCursor.version);
             }
             newCheckPoint.setMetadataChangeFileIndex(readCursor.changeIndex);
+            newCheckPoint.setRowNum(readCursor.rowNum);
 
             DeltaCheckpoint s = this.checkpointMap.get(Integer.valueOf((int) slot));
             if (s == null) { // no checkpoint before means there are no record before, no need to filter
                 log.info("checkpoint for partition {} {} is missing", this.checkpointMap, slot);
                 return true;
             }
-            if (s != null && newCheckPoint.compareTo(s) >= 0) {
-                return true;
+            if (s != null) {
+                if (newCheckPoint.getRowNum() >= 0 && newCheckPoint.compareTo(s) >= 0) { //row filter
+                    return true;
+                } else if (newCheckPoint.getRowNum() < 0
+                        && newCheckPoint.compareVersionAndIndex(s) >= 0) {//action filter
+                    return true;
+                }
             }
             return false;
         };
