@@ -22,6 +22,7 @@ package org.apache.pulsar.ecosystem.io.deltalake;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.delta.standalone.types.StructType;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
@@ -120,11 +121,14 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         reader.setFilter(initDeltaReadFilter(checkpointMap));
         reader.setStartCheckpoint(checkpointMap.get(minCheckpointMapKey));
         DeltaReader.topicPartitionNum = this.topicPartitionNum;
-        parseParquetExecutor = Executors.newFixedThreadPool(config.parseParquetExcutorNum);
-        readRecordExecutor = Executors.newFixedThreadPool(config.parseParquetExcutorNum);
+        parseParquetExecutor = Executors.newFixedThreadPool(config.parseParquetExcutorNum,
+                new DefaultThreadFactory("parseParquetPool"));
+        readRecordExecutor = Executors.newFixedThreadPool(config.parseParquetExcutorNum,
+                new DefaultThreadFactory("readRecordPool"));
         reader.setExecutorService(parseParquetExecutor);
 
-        executor = Executors.newFixedThreadPool(1);
+        executor = Executors.newFixedThreadPool(1,
+                new DefaultThreadFactory("deltaReadThreadPool"));
         executor.execute(new DeltaReaderThread(this, readRecordExecutor,
                 config.maxReadActionSizeOneRound, this.processingException));
     }
@@ -132,7 +136,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
     @Override
     public Record<GenericRecord> read() throws Exception {
         if (this.processingException.get() > 0) {
-            log.info("processing encounter exception will stop reading record and connector will exit");
+            log.error("processing encounter exception will stop reading record and connector will exit");
             throw new Exception("processing exception in processing delta record");
         }
         readCnt++;
