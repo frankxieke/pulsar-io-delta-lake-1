@@ -49,6 +49,7 @@ public class DeltaLakeConnectorConfig implements Serializable {
     String s3aSecretKey;
     int parseParquetExcutorNum;
     int maxReadActionSizeOneRound;
+    int maxReadRowCountOneRound;
 
     @JsonIgnore
     Long startingTimeStampSecond;
@@ -118,6 +119,10 @@ public class DeltaLakeConnectorConfig implements Serializable {
         if (maxReadActionSizeOneRound <= 0) {
             this.maxReadActionSizeOneRound = 1000;
             log.info("Read at most {} delta action list one round ", this.maxReadActionSizeOneRound);
+        }
+        if (maxReadRowCountOneRound <= 0) {
+            this.maxReadRowCountOneRound = 1000000;
+            log.info("max read row count one round is set to {}", this.maxReadRowCountOneRound);
         }
     }
 

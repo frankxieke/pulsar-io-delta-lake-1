@@ -36,12 +36,14 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import lombok.Data;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.schema.Type;
-import org.apache.pulsar.ecosystem.io.deltalake.parquet.ParquetReaderUtils;
+import org.apache.pulsar.ecosystem.io.deltalake.parquet.ParquetReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +58,6 @@ public class DeltaReader {
     public DeltaLog deltaLog;
     public Function<ReadCursor, Boolean> filter;
     public static long topicPartitionNum;
-    public ExecutorService executorService;
     public DeltaLakeConnectorConfig config;
     private Configuration conf;
 
@@ -135,28 +136,41 @@ public class DeltaReader {
         this.open();
     }
 
+    /**
+     * The VersionResponse is used to contain version and outOfRange flag.
+     */
+    public static class VersionResponse {
+        Long version;
+        Boolean isOutOfRange;
 
-    public Long getSnapShotVersionFromTimeStamp(Long timeStamp) {
+        public VersionResponse(Long version, Boolean isOutOfRange) {
+            this.version = version;
+            this.isOutOfRange = isOutOfRange;
+        }
+    }
+
+
+    public VersionResponse getSnapShotVersionFromTimeStamp(Long timeStamp) {
         Snapshot s = null;
         try {
             s = deltaLog.getSnapshotForTimestampAsOf(timeStamp);
             long v = s.getVersion();
-            return v;
+            return new VersionResponse(v, false);
         } catch (IllegalArgumentException e) {
             try {
                 s = deltaLog.update();
                 long v = s.getVersion();
                 log.error("timestamp  {} is not exist is delta lake, will use the latest version {}",
                         timeStamp, v);
-                return v;
+                return new VersionResponse(v, true);
             } catch (Exception e2) {
                 log.warn("get latest snapshot version failed, use 0 instead");
-                return 0L;
+                return new VersionResponse(0L, true);
             }
         }
     }
 
-    public Long getAndValidateSnapShotVersion(Long snapShotVersion) {
+    public VersionResponse getAndValidateSnapShotVersion(Long snapShotVersion) {
         Snapshot s = null;
         try {
             if (snapShotVersion == -1) {
@@ -165,24 +179,24 @@ public class DeltaReader {
                     long v = s.getVersion();
                     log.error("snapShotVersion {} is not exist is delta lake, will use the latest version {}",
                             snapShotVersion, v);
-                    return v;
+                    return new VersionResponse(v, false);
                 } catch (Exception e) {
                     log.warn("get latest snapshot version failed, use 0 instead");
-                    return 0L;
+                    return new VersionResponse(0L, true);
                 }
             }
             s = deltaLog.getSnapshotForVersionAsOf(snapShotVersion);
-            return s.getVersion();
+            return new VersionResponse(s.getVersion(), false);
         } catch (IllegalArgumentException e) {
             try {
                 s = deltaLog.update();
                 long v = s.getVersion();
                 log.error("snapShotVersion {} is not exist is delta lake, will use the latest version {}",
                         snapShotVersion, v);
-                return v;
+                return new VersionResponse(v, true);
             } catch (Exception e2) {
                 log.warn("get latest snapshot version failed, use 0 instead");
-                return 0L;
+                return new VersionResponse(0L, true);
             }
         }
     }
@@ -297,8 +311,37 @@ public class DeltaReader {
         return actionList;
     }
 
-    public CompletableFuture<List<RowRecordData>> readParquetFileAsync(ReadCursor startCursor,
-                    ExecutorService executorService) {
+    public int getMaxConcurrency(List<DeltaReader.ReadCursor> actionList, int baseIndex) {
+        long currentRecordsNum = 0;
+        int maxConcurrency = 0;
+        for (int i = baseIndex; i < actionList.size() && currentRecordsNum < config.maxReadRowCountOneRound; i++) {
+            ReadCursor startCursor = actionList.get(i);
+            Action act = startCursor.act;
+            if (act instanceof AddFile || act instanceof RemoveFile) {
+                String filePath = config.tablePath + "/" + ((FileAction) act).getPath();
+                ParquetReader readerTmp = new ParquetReader();
+                try {
+                    long fileRowNum = readerTmp.getRowNum(filePath, conf);
+                    currentRecordsNum += fileRowNum;
+                    if (currentRecordsNum < config.maxReadRowCountOneRound || maxConcurrency == 0) {
+                        maxConcurrency++;
+                    }
+                } catch (IOException e) {
+                    return -1;
+                } finally {
+                    try {
+                        readerTmp.close();
+                    } catch (IOException e2) {
+                        log.error("close parquet reader {} failed ", filePath, e2);
+                    }
+                }
+            }
+        }
+        return maxConcurrency;
+    }
+
+    public CompletableFuture<List<RowRecordData>> readTotalParquetFileAsync(ReadCursor startCursor,
+                                                                       ExecutorService executorService) {
         CompletableFuture<List<RowRecordData>> cf = new CompletableFuture<>();
         CompletableFuture.runAsync(()-> {
             Action act = startCursor.act;
@@ -307,9 +350,9 @@ public class DeltaReader {
             if (act instanceof AddFile || act instanceof RemoveFile) {
                 filePath = config.tablePath + "/" + ((FileAction) act).getPath();
                 long start = System.currentTimeMillis();
-                ParquetReaderUtils.Parquet parquet = null;
+                ParquetReader.Parquet parquet = null;
                 try {
-                    parquet = ParquetReaderUtils.getPargetParquetDataquetData(filePath, conf);
+                    parquet = ParquetReader.getTotalParquetData(filePath, conf);
                 } catch (IOException e) {
                     cf.completeExceptionally(e);
                     return;
@@ -338,6 +381,70 @@ public class DeltaReader {
             cf.complete(recordList);
         }, executorService);
         return cf;
+    }
+
+
+    public void readPartParquetFileAsync(ReadCursor startCursor,
+                                         ExecutorService executorService, LinkedBlockingQueue<RowRecordData> queue,
+                                         AtomicInteger readStatus) {
+        CompletableFuture.runAsync(()-> {
+            Action act = startCursor.act;
+            String filePath;
+            if (act instanceof AddFile || act instanceof RemoveFile) {
+                filePath = config.tablePath + "/" + ((FileAction) act).getPath();
+                ParquetReader reader = new ParquetReader();
+                try {
+                    reader.open(filePath, conf);
+                } catch (IOException e) {
+                    log.error("readPartParquetFileAsync open {} failed, ", filePath, e);
+                    readStatus.set(-1);
+                    return;
+                }
+
+                ParquetReader.Parquet parquet = null;
+                int rowNumInParquetFile = 0;
+                try {
+                    while ((parquet = reader.readBatch(config.maxReadRowCountOneRound)) != null) {
+                        for (int i = 0; i < parquet.getData().size(); i++) {
+                            ReadCursor tmp;
+                            try {
+                                tmp = (ReadCursor) startCursor.clone();
+                            } catch (CloneNotSupportedException e) {
+                                return;
+                            }
+                            tmp.rowNum = rowNumInParquetFile++;
+                            if (i == parquet.getData().size() - 1) {
+                                tmp.endOfFile = true;
+                            }
+                            if (isMatch(tmp)) {
+                                queue.put(new RowRecordData(tmp, parquet.getData().get(i), parquet.getSchema()));
+                            }
+                        }
+                    }
+                    readStatus.set(1);
+                } catch (IOException | InterruptedException e) {
+                    log.error("readPartParquetFileAsync readBatch encounter exception,", e);
+                    readStatus.set(-1);
+                    return;
+                } finally {
+                    try {
+                        reader.close();
+                    } catch (IOException e2) {
+                        log.error("readPartParquetFileAsync close encounter exception,", e2);
+                        readStatus.set(-1);
+                        return;
+                    }
+                }
+            } else if (act instanceof CommitInfo) {
+                ReadCursor tmp = startCursor;
+                try {
+                    queue.put(new RowRecordData(tmp, null));
+                } catch (InterruptedException e) {
+                    readStatus.set(-1);
+                    log.error("readPartParquetFileAsync queue put encounter exception,", e);
+                }
+            }
+        }, executorService);
     }
 
     public static String partitionValueToString(Map<String, String> partitionValue) {

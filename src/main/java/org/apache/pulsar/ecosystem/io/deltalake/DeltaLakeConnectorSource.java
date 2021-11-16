@@ -59,13 +59,14 @@ import org.slf4j.LoggerFactory;
 public class DeltaLakeConnectorSource implements Source<GenericRecord> {
     private static final Logger log = LoggerFactory.getLogger(DeltaLakeConnectorSource.class);
     private final Integer minCheckpointMapKey = -1;
+    private final int maxQueueSize = 100000;
     public DeltaLakeConnectorConfig config;
     // delta lake schema, when delta lake schema changes,this schema will change
     private SourceContext sourceContext;
     private ExecutorService executor;
     private ExecutorService parseParquetExecutor;
     private ExecutorService readRecordExecutor;
-    private LinkedBlockingQueue<DeltaRecord> queue = new LinkedBlockingQueue<DeltaRecord>();
+    private LinkedBlockingQueue<DeltaRecord> queue = new LinkedBlockingQueue<DeltaRecord>(maxQueueSize);
     private long topicPartitionNum;
     private final Map<Integer, DeltaCheckpoint> checkpointMap = new HashMap<Integer, DeltaCheckpoint>();
     public DeltaReader reader;
@@ -121,14 +122,10 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         reader.setFilter(initDeltaReadFilter(checkpointMap));
         reader.setStartCheckpoint(checkpointMap.get(minCheckpointMapKey));
         DeltaReader.topicPartitionNum = this.topicPartitionNum;
-        parseParquetExecutor = Executors.newFixedThreadPool(config.parseParquetExcutorNum,
-                new DefaultThreadFactory("parseParquetPool"));
         readRecordExecutor = Executors.newFixedThreadPool(config.parseParquetExcutorNum,
                 new DefaultThreadFactory("readRecordPool"));
-        reader.setExecutorService(parseParquetExecutor);
 
-        executor = Executors.newFixedThreadPool(1,
-                new DefaultThreadFactory("deltaReadThreadPool"));
+        executor = Executors.newSingleThreadExecutor(new DefaultThreadFactory("deltaReadThreadPool"));
         executor.execute(new DeltaReaderThread(this, readRecordExecutor,
                 config.maxReadActionSizeOneRound, this.processingException));
     }
@@ -151,9 +148,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         if (this.executor != null) {
             this.executor.shutdown();
         }
-        if (this.parseParquetExecutor != null) {
-            this.parseParquetExecutor.shutdown();
-        }
+
         if (this.readRecordExecutor != null) {
             this.readRecordExecutor.shutdown();
         }
@@ -166,9 +161,9 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
         try {
             sendCnt++;
             log.debug("enqueue: seq {} version {} changeIndex {} rowNum {} topic {} putcount:{} readcount {}",
-                    DeltaRecord.msgSeqCntMap.get(0), rowRecordData.nextCursor.getVersion(),
-                    rowRecordData.nextCursor.getChangeIndex(),
-                    rowRecordData.nextCursor.getRowNum(), this.destinationTopic, sendCnt, readCnt);
+                        DeltaRecord.msgSeqCntMap.get(0), rowRecordData.nextCursor.getVersion(),
+                        rowRecordData.nextCursor.getChangeIndex(),
+                        rowRecordData.nextCursor.getRowNum(), this.destinationTopic, sendCnt, readCnt);
             if (this.deltaSchema != null) {
                 this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, deltaSchema,
                         this.sourceContext, processingException));
@@ -259,17 +254,21 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
 
         if (checkpointMap.size() == 0) {
             Long startVersion = Long.valueOf(0);
+            DeltaReader.VersionResponse versionResponse = null;
             if (!this.config.startingVersion.equals("")) {
-                startVersion = reader.getAndValidateSnapShotVersion(this.config.startingSnapShotVersionNumber);
+                versionResponse = reader.getAndValidateSnapShotVersion(this.config.startingSnapShotVersionNumber);
             } else if (!this.config.startingTimeStamp.equals("")) {
-                startVersion = reader.getSnapShotVersionFromTimeStamp(this.config.startingTimeStampSecond);
+                versionResponse = reader.getSnapShotVersionFromTimeStamp(this.config.startingTimeStampSecond);
             }
 
-            if (this.config.includeHistoryData) {
-                checkpoint = new DeltaCheckpoint(DeltaCheckpoint.StateType.FULL_COPY, startVersion);
-            } else {
-                checkpoint = new DeltaCheckpoint(DeltaCheckpoint.StateType.INCREMENTAL_COPY, startVersion);
+            DeltaCheckpoint.StateType copyMode = DeltaCheckpoint.StateType.INCREMENTAL_COPY;
+
+            startVersion = versionResponse.version;
+            if (!versionResponse.isOutOfRange && this.config.includeHistoryData) {
+                copyMode = DeltaCheckpoint.StateType.FULL_COPY;
             }
+
+            checkpoint = new DeltaCheckpoint(copyMode, startVersion);
             checkpointMap.put(minCheckpointMapKey, checkpoint);
             try {
                 deltaSchema = reader.getSnapShot(startVersion).getMetadata().getSchema();
@@ -283,7 +282,9 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                 checkpointMap.put(partitionList.get(i), checkpoint);
             }
         } else {
-            Long startVersion = reader.getAndValidateSnapShotVersion(checkpoint.getSnapShotVersion());
+            DeltaReader.VersionResponse versionResponse =
+                    reader.getAndValidateSnapShotVersion(checkpoint.getSnapShotVersion());
+            Long startVersion = versionResponse.version;
             if (startVersion > checkpoint.getSnapShotVersion()) {
                 log.error("checkpoint version: {} not exist, current version {}",
                         checkpoint.getSnapShotVersion(), startVersion);

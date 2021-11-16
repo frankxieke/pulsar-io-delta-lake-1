@@ -18,12 +18,15 @@
  */
 package org.apache.pulsar.ecosystem.io.deltalake;
 
+import io.delta.standalone.actions.CommitInfo;
 import io.delta.standalone.actions.Metadata;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +59,8 @@ public class DeltaReaderThread extends Thread {
         CompletableFuture<List<DeltaReader.ReadCursor>> actionListFuture = null;
         List<DeltaReader.ReadCursor> actionList = null;
         boolean isFullCopyPeriod = checkpoint.isFullCopy();
+        LinkedBlockingQueue<DeltaReader.RowRecordData> queue =
+                new LinkedBlockingQueue<DeltaReader.RowRecordData>(source.config.maxReadRowCountOneRound);
         while (!stopped) {
             try {
                 startVersion = nextVersion;
@@ -91,35 +96,63 @@ public class DeltaReaderThread extends Thread {
                 actionListFuture = reader.getDeltaActionFromSnapShotVersionAsync(nextVersion,
                         maxReadActionSizeOneRound, isFullCopyPeriod);
 
-                List<CompletableFuture<List<DeltaReader.RowRecordData>>> futureList = new ArrayList<>();
-                long start = System.currentTimeMillis();
-                for (int i = 0; i < actionList.size(); i++) {
-                    if (actionList.get(i).act instanceof Metadata) {
-                        source.setDeltaSchema(((Metadata) actionList.get(i).act).getSchema());
-                        continue;
+                int base = 0;
+                while (base < actionList.size()) {
+                    int concurrency = reader.getMaxConcurrency(actionList, base);
+                    log.debug("totalActionSize {} concurency {} base {}", actionList.size(), concurrency, base);
+                    if (concurrency > 1) { // read multiple files
+                        long start = System.currentTimeMillis();
+                        List<CompletableFuture<List<DeltaReader.RowRecordData>>> futureList = new ArrayList<>();
+                        for (int j = 0; j < concurrency; j++) {
+                            int index = base + j;
+                            if (actionList.get(index).act instanceof Metadata) {
+                                source.setDeltaSchema(((Metadata) actionList.get(index).act).getSchema());
+                                continue;
+                            }
+                            CompletableFuture<List<DeltaReader.RowRecordData>> rowRecordsFuture =
+                                    reader.readTotalParquetFileAsync(actionList.get(index), readExecutor);
+                            futureList.add(rowRecordsFuture);
+                        }
+                        long totalSize = 0;
+                        for (int k = 0; k < futureList.size(); k++) {
+                            CompletableFuture<List<DeltaReader.RowRecordData>> rowRecordsFuture = futureList.get(k);
+                            List<DeltaReader.RowRecordData> rowRecords = rowRecordsFuture.get();
+                            rowRecords.forEach(source::enqueue);
+                            totalSize += rowRecords.size();
+                            log.debug("version {} actionIndex: {} actionSize {} rowRecordSize {}",
+                                    actionList.get(base + k).getVersion(),
+                                    base + k, actionList.size(), rowRecords.size());
+                        }
+
+                        long end = System.currentTimeMillis();
+                        log.debug("parse all files cost {} ms, total record: {} totalFiles {}",
+                                end - start, totalSize, futureList.size());
+                    } else {
+                        AtomicInteger readStatus = new AtomicInteger(0);
+                        if (actionList.get(base).act instanceof CommitInfo) {
+                            base = base + concurrency;
+                            continue;
+                        }
+                        reader.readPartParquetFileAsync(actionList.get(base), readExecutor, queue, readStatus);
+                        while (true) {
+                            int queueSize = queue.size();
+                            if (queueSize > 0) {
+                                for (int q = 0; q < queueSize; q++) {
+                                    DeltaReader.RowRecordData record = queue.take();
+                                    source.enqueue(record);
+                                }
+                            } else if (readStatus.get() == 1) {
+                                break;
+                            } else if (readStatus.get() < 0) {
+                                log.error("readPartParquetFileAsync encounter exception, will skip read");
+                                throw new IOException("readPartParquetFileAsync failed");
+                            }
+                        }
                     }
-                    if (i == actionList.size() - 1) {
-                        DeltaReader.ReadCursor cursor = actionList.get(i);
-                        cursor.endOfVersion = true;
-                    }
-                    CompletableFuture<List<DeltaReader.RowRecordData>> rowRecordsFuture =
-                            reader.readParquetFileAsync(actionList.get(i), readExecutor);
-                    futureList.add(rowRecordsFuture);
-                }
-                long totalSize = 0;
-                for (int i = 0; i < futureList.size(); i++) {
-                    CompletableFuture<List<DeltaReader.RowRecordData>> rowRecordsFuture = futureList.get(i);
-                    List<DeltaReader.RowRecordData> rowRecords = rowRecordsFuture.get();
-                    rowRecords.forEach(source::enqueue);
-                    totalSize += rowRecords.size();
-                    log.debug("version {} actionIndex: {} rowRecordSize {}",
-                            actionList.get(i).getVersion(), i, rowRecords.size());
+                    base = base + concurrency;
                 }
 
-                long end = System.currentTimeMillis();
-                log.debug("parse all files cost {} ms, total record: {} totalFiles {}",
-                        end - start, totalSize, futureList.size());
-            } catch (InterruptedException | ExecutionException ex) {
+            } catch (InterruptedException | ExecutionException | IOException ex) {
                 log.error("read data from delta lake error, will mark processingException", ex);
                 close();
                 this.processingException.incrementAndGet();
