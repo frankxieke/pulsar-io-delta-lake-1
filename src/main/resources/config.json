@@ -1,0 +1,13 @@
+{
+  "tenant": "public",
+  "namespace": "default",
+  "name": "delta111",
+  "topicName": "test-pulsar",
+  "parallelism": 1,
+  "configs":
+  {
+    "startingVersion":"1",
+    "includeHistoryData": true,
+    "tablePath": "/tmp/delta_stand_alone_test"
+  }
+}

@@ -1,0 +1,3 @@
+name: deltalake
+sourceClass: org.apache.pulsar.ecosystem.io.deltalake.DeltaLakeConnectorSource
+sourceConfigClass: org.apache.pulsar.ecosystem.io.deltalake.DeltaLakeConnectorConfig

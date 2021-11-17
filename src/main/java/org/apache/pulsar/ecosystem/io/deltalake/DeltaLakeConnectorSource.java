@@ -1,0 +1,355 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+package org.apache.pulsar.ecosystem.io.deltalake;
+
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.delta.standalone.types.StructType;
+import io.netty.util.concurrent.DefaultThreadFactory;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import lombok.AccessLevel;
+import lombok.Getter;
+import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.client.api.schema.GenericRecord;
+import org.apache.pulsar.client.api.schema.GenericSchema;
+import org.apache.pulsar.functions.api.Record;
+import org.apache.pulsar.io.core.Source;
+import org.apache.pulsar.io.core.SourceContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+
+/**
+ * A source connector that read data from delta lake through delta standalone reader.
+ */
+@Getter(AccessLevel.PACKAGE)
+public class DeltaLakeConnectorSource implements Source<GenericRecord> {
+    private static final Logger log = LoggerFactory.getLogger(DeltaLakeConnectorSource.class);
+    private final Integer minCheckpointMapKey = -1;
+    private final int maxQueueSize = 100000;
+    public DeltaLakeConnectorConfig config;
+    // delta lake schema, when delta lake schema changes,this schema will change
+    private SourceContext sourceContext;
+    private ExecutorService executor;
+    private ExecutorService parseParquetExecutor;
+    private ExecutorService readRecordExecutor;
+    private LinkedBlockingQueue<DeltaRecord> queue = new LinkedBlockingQueue<DeltaRecord>(maxQueueSize);
+    private long topicPartitionNum;
+    private final Map<Integer, DeltaCheckpoint> checkpointMap = new HashMap<Integer, DeltaCheckpoint>();
+    public DeltaReader reader;
+    private String destinationTopic;
+    private AtomicInteger processingException = new AtomicInteger(0);
+    private long readCnt = 0;
+    private long sendCnt = 0;
+
+
+    public void setDeltaSchema(StructType deltaSchema) {
+        log.info("update pulsar schema from {} to {}", this.deltaSchema.getTreeString(), deltaSchema.getTreeString());
+        this.deltaSchema = deltaSchema;
+    }
+
+    private StructType deltaSchema;
+    private GenericSchema<GenericRecord> pulsarSchema;
+
+    @Override
+    public void open(Map<String, Object> map, SourceContext sourceContext) throws Exception {
+        if (null != config) {
+            throw new IllegalStateException("Connector is already open");
+        }
+        this.sourceContext = sourceContext;
+        this.destinationTopic = sourceContext.getOutputTopic();
+        log.info("destination topic is {} numberInstances: {} myInstanceId: {}",
+                this.destinationTopic, sourceContext.getNumInstances(), sourceContext.getInstanceId());
+
+        // load the configuration and validate it
+        this.config = DeltaLakeConnectorConfig.load(map);
+        this.config.validate();
+
+        CompletableFuture<List<String>> listPartitions =
+                sourceContext.getPulsarClient().getPartitionsForTopic(sourceContext.getOutputTopic());
+        this.topicPartitionNum = listPartitions.get().size();
+        // try to open the delta lake
+        reader = new DeltaReader(config);
+
+        Optional<Map<Integer, DeltaCheckpoint>> checkpointMapOpt = getCheckpointFromStateStore(sourceContext);
+        if (!checkpointMapOpt.isPresent()) {
+            log.info("instanceId:{} source connector do nothing, without any partition assigned",
+                    sourceContext.getInstanceId());
+            return;
+        }
+        DeltaRecord.msgSeqCntMap = new ConcurrentHashMap<>();
+        checkpointMap.forEach((key, value) -> {
+            if (key > 0) {
+                log.info("partition {} sequence start from {} checkpoint {}", key, value.getSeqCount(), value);
+            }
+            DeltaRecord.msgSeqCntMap.put(key, value.getSeqCount());
+        });
+        DeltaRecord.saveCheckpointTread = new DeltaRecord.SaveCheckpointTread(sourceContext);
+        DeltaRecord.saveCheckpointTread.start();
+        reader.setFilter(initDeltaReadFilter(checkpointMap));
+        reader.setStartCheckpoint(checkpointMap.get(minCheckpointMapKey));
+        DeltaReader.topicPartitionNum = this.topicPartitionNum;
+        readRecordExecutor = Executors.newFixedThreadPool(config.parseParquetExcutorNum,
+                new DefaultThreadFactory("readRecordPool"));
+
+        executor = Executors.newSingleThreadExecutor(new DefaultThreadFactory("deltaReadThreadPool"));
+        executor.execute(new DeltaReaderThread(this, readRecordExecutor,
+                config.maxReadActionSizeOneRound, this.processingException));
+    }
+
+    @Override
+    public Record<GenericRecord> read() throws Exception {
+        if (this.processingException.get() > 0) {
+            log.error("processing encounter exception will stop reading record and connector will exit");
+            throw new Exception("processing exception in processing delta record");
+        }
+        readCnt++;
+        DeltaRecord deltaRecord = this.queue.take();
+        return deltaRecord;
+    }
+
+    @Override
+    public void close() {
+        log.info("close source connector");
+        DeltaRecord.saveCheckpointTread.saveCheckpoint();
+        if (this.executor != null) {
+            this.executor.shutdown();
+        }
+
+        if (this.readRecordExecutor != null) {
+            this.readRecordExecutor.shutdown();
+        }
+        if (DeltaRecord.saveCheckpointTread != null) {
+            DeltaRecord.saveCheckpointTread.setStopped(true);
+        }
+    }
+
+    public void enqueue(DeltaReader.RowRecordData rowRecordData) {
+        try {
+            sendCnt++;
+            log.debug("enqueue: seq {} version {} changeIndex {} rowNum {} topic {} putcount:{} readcount {}",
+                        DeltaRecord.msgSeqCntMap.get(0), rowRecordData.nextCursor.getVersion(),
+                        rowRecordData.nextCursor.getChangeIndex(),
+                        rowRecordData.nextCursor.getRowNum(), this.destinationTopic, sendCnt, readCnt);
+            if (this.deltaSchema != null) {
+                this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, deltaSchema,
+                        this.sourceContext, processingException));
+            } else if (this.pulsarSchema != null) {
+                this.queue.put(new DeltaRecord(rowRecordData, this.destinationTopic, pulsarSchema,
+                        this.sourceContext, processingException));
+            }
+        } catch (IOException ex) {
+            log.error("delta message enqueue failed for ", ex);
+            processingException.incrementAndGet();
+        } catch (InterruptedException interruptedException) {
+            log.error("delta message enqueue interrupted", interruptedException);
+            processingException.incrementAndGet();
+        } catch (NullPointerException npe) { // will not happen
+            log.error("delta message enqueue failed, ", npe);
+            processingException.incrementAndGet();
+        }
+    }
+
+
+    private void handleGetDeltaSchemaFailed(SourceContext sourceContext) throws Exception {
+        Class<?> classType = sourceContext.getClass();
+        Field adminField = classType.getDeclaredField("pulsarAdmin");
+        adminField.setAccessible(true);
+        PulsarAdmin admin = (PulsarAdmin) adminField.get(sourceContext);
+        pulsarSchema = Schema.generic(admin.schemas().getSchemaInfo(sourceContext.getOutputTopic()));
+        log.info("get latest schema from pulsar, get {}, pulsarSchema {}",
+                admin.schemas().getSchemaInfo(sourceContext.getOutputTopic()),
+                pulsarSchema);
+    }
+
+
+    /**
+     * get checkpoint position from pulsar function stateStore.
+     * @return if this instance not own any partition, will return empty, else return the checkpoint map.
+     */
+    Optional<Map<Integer, DeltaCheckpoint>> getCheckpointFromStateStore(SourceContext sourceContext)
+            throws Exception {
+        int instanceId = sourceContext.getInstanceId();
+        int numInstance = sourceContext.getNumInstances();
+        DeltaCheckpoint checkpoint = null;
+
+        List<Integer> partitionList = new LinkedList<Integer>();
+        for (int i = 0; i < topicPartitionNum; i++) {
+            log.info("partition: {} numInstance {} instanceId {}", i, numInstance, instanceId);
+            if (i % numInstance == instanceId) {
+                partitionList.add(i);
+            }
+        }
+
+        if (partitionList.size() <= 0) {
+            return Optional.empty();
+        }
+
+        for (int i = 0; i < partitionList.size(); i++) {
+            ByteBuffer byteBuffer = null;
+            try {
+                log.info("begin to get checkpoint from pulsar");
+                byteBuffer = sourceContext.getState(DeltaCheckpoint.getStatekey(partitionList.get(i)));
+                if (byteBuffer == null) {
+                    log.info("get checkpoint for partition {} ,return empty, will start from first",
+                            partitionList.get(i));
+                    continue;
+                }
+            } catch (RuntimeException e) {
+                log.error("getState exception failed for partition {} , ", partitionList.get(i), e);
+                throw new IOException("get checkpoint from state store failed for partition " + partitionList.get(i));
+            }
+            String jsonString = Charset.forName("utf-8").decode(byteBuffer).toString();
+            ObjectMapper mapper = new ObjectMapper();
+            DeltaCheckpoint tmpCheckpoint = null;
+            try {
+                mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                tmpCheckpoint = mapper.readValue(jsonString, DeltaCheckpoint.class);
+            } catch (IOException e) {
+                log.error("parse the checkpoint for partition {} failed, jsonString: {}",
+                        partitionList.get(i), jsonString, e);
+                throw new IOException("parse checkpoint failed");
+            } finally {
+                log.info("getcheckpoint from pulsar for partition {} checkpoint {}",
+                        partitionList.get(i), tmpCheckpoint);
+            }
+            checkpointMap.put(partitionList.get(i), tmpCheckpoint);
+            if (checkpoint == null || checkpoint.compareTo(tmpCheckpoint) > 0) {
+                checkpoint = tmpCheckpoint;
+            }
+        }
+
+        if (checkpointMap.size() == 0) {
+            Long startVersion = Long.valueOf(0);
+            DeltaReader.VersionResponse versionResponse = null;
+            if (!this.config.startingVersion.equals("")) {
+                versionResponse = reader.getAndValidateSnapShotVersion(this.config.startingSnapShotVersionNumber);
+            } else if (!this.config.startingTimeStamp.equals("")) {
+                versionResponse = reader.getSnapShotVersionFromTimeStamp(this.config.startingTimeStampSecond);
+            }
+
+            DeltaCheckpoint.StateType copyMode = DeltaCheckpoint.StateType.INCREMENTAL_COPY;
+
+            startVersion = versionResponse.version;
+            if (!versionResponse.isOutOfRange && this.config.includeHistoryData) {
+                copyMode = DeltaCheckpoint.StateType.FULL_COPY;
+            }
+
+            checkpoint = new DeltaCheckpoint(copyMode, startVersion);
+            checkpointMap.put(minCheckpointMapKey, checkpoint);
+            try {
+                deltaSchema = reader.getSnapShot(startVersion).getMetadata().getSchema();
+            } catch (IllegalArgumentException e) {
+                log.error("getSchema from snapshot {} failed, ", startVersion, e);
+                handleGetDeltaSchemaFailed(sourceContext);
+            }
+            for (int i = 0; i < partitionList.size(); i++) {
+                log.info("checkpointMap not including partition {}, will start from first {}",
+                        partitionList.get(i), checkpoint.toString());
+                checkpointMap.put(partitionList.get(i), checkpoint);
+            }
+        } else {
+            DeltaReader.VersionResponse versionResponse =
+                    reader.getAndValidateSnapShotVersion(checkpoint.getSnapShotVersion());
+            Long startVersion = versionResponse.version;
+            if (startVersion > checkpoint.getSnapShotVersion()) {
+                log.error("checkpoint version: {} not exist, current version {}",
+                        checkpoint.getSnapShotVersion(), startVersion);
+                throw new IOException("last checkpoint version not exist, need to handle this manually");
+            }
+            try {
+                deltaSchema = reader.getSnapShot(startVersion).getMetadata().getSchema();
+            } catch (IllegalArgumentException e) {
+                log.error("getSchema from snapshot {} failed, ", startVersion, e);
+                handleGetDeltaSchemaFailed(sourceContext);
+            }
+            checkpointMap.put(minCheckpointMapKey, checkpoint);
+            for (int i = 0; i < partitionList.size(); i++) {
+                if (!checkpointMap.containsKey(partitionList.get(i))) {
+                    log.warn("checkpointMap not including partition {}, will use default checkpoint {}",
+                            partitionList.get(i), checkpoint.toString());
+                    checkpointMap.put(partitionList.get(i), checkpoint);
+                }
+            }
+        }
+
+        return Optional.of(checkpointMap);
+    }
+
+    private Function<DeltaReader.ReadCursor, Boolean> initDeltaReadFilter(Map<Integer, DeltaCheckpoint> partitionMap) {
+        return (readCursor) -> {
+            if (readCursor == null) {
+                log.info("readCursor is null return true");
+                return true;
+            }
+            long slot = DeltaReader.getPartitionIdByDeltaPartitionValue(readCursor.partitionValue,
+                    this.topicPartitionNum);
+            if (!partitionMap.containsKey(Integer.valueOf((int) slot))) {
+                log.info("partitionMap {} not includeing {}", partitionMap, slot);
+                return false;
+            }
+
+            DeltaCheckpoint newCheckPoint = null;
+            if (readCursor.isFullSnapShot) {
+                newCheckPoint = new DeltaCheckpoint(DeltaCheckpoint.StateType.FULL_COPY, readCursor.version);
+            } else {
+                newCheckPoint = new DeltaCheckpoint(DeltaCheckpoint.StateType.INCREMENTAL_COPY, readCursor.version);
+            }
+            newCheckPoint.setMetadataChangeFileIndex(readCursor.changeIndex);
+            newCheckPoint.setRowNum(readCursor.rowNum);
+
+            DeltaCheckpoint s = this.checkpointMap.get(Integer.valueOf((int) slot));
+            if (s == null) { // no checkpoint before means there are no record before, no need to filter
+                log.info("checkpoint for partition {} {} is missing", this.checkpointMap, slot);
+                return true;
+            }
+            if (s != null) {
+                if (newCheckPoint.getRowNum() >= 0 && newCheckPoint.compareTo(s) >= 0) { //row filter
+                    return true;
+                } else if (newCheckPoint.getRowNum() < 0
+                        && newCheckPoint.compareVersionAndIndex(s) >= 0) {//action filter
+                    return true;
+                }
+            }
+            return false;
+        };
+    }
+
+
+    public DeltaCheckpoint getMinCheckpoint() {
+        return this.checkpointMap.get(minCheckpointMapKey);
+    }
+}
