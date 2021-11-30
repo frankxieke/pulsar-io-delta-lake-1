@@ -53,13 +53,15 @@
     <hadoop.version>3.2.1</hadoop.version>
     <delta.version>0.2.1-SNAPSHOT</delta.version>
     <netty.version>4.1.60.Final</netty.version>
+    <parquet.avro.version>1.10.1</parquet.avro.version>
 
     <!-- test dependencies -->
     <junit.version>4.12</junit.version>
     <mockito.version>2.22.0</mockito.version>
     <powermock.version>2.0.0-beta.5</powermock.version>
     <testcontainers.version>1.8.3</testcontainers.version>
-    <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
+    <parquet.hadoop.version>1.11.0</parquet.hadoop.version>
+    <avro.version>1.9.2</avro.version>
 
     <!-- build plugin dependencies -->
     <license.plugin.version>3.0</license.plugin.version>
@@ -102,7 +104,6 @@
         <artifactId>parquet-hadoop</artifactId>
         <version>${parquet.hadoop.version}</version>
       </dependency>
-
       <dependency>
         <groupId>io.streamnative</groupId>
         <artifactId>pulsar-io-core</artifactId>
@@ -196,6 +197,12 @@
       <version>${delta.version}</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.avro</groupId>
+      <artifactId>avro</artifactId>
+      <version>${avro.version}</version>
+    </dependency>
+
 
     <!-- test dependencies -->
     <dependency>
@@ -243,6 +250,17 @@
       <groupId>io.netty</groupId>
       <artifactId>netty-common</artifactId>
       <version>${netty.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.parquet</groupId>
+      <artifactId>parquet-avro</artifactId>
+      <version>${parquet.avro.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.parquet</groupId>
+          <artifactId>parquet-format</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
   </dependencies>
 

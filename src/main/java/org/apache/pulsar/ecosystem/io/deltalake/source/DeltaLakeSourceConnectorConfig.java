@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.pulsar.ecosystem.io.deltalake;
+package org.apache.pulsar.ecosystem.io.deltalake.source;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,8 +35,8 @@ import org.slf4j.LoggerFactory;
  */
 
 @Data
-public class DeltaLakeConnectorConfig implements Serializable {
-    private static final Logger log = LoggerFactory.getLogger(DeltaLakeConnectorConfig.class);
+public class DeltaLakeSourceConnectorConfig implements Serializable {
+    private static final Logger log = LoggerFactory.getLogger(DeltaLakeSourceConnectorConfig.class);
     public static final String FromLatest = "latest";
     public static final String FileSystemType = "filesystem";
     public static final String S3Type = "s3";
@@ -56,7 +56,7 @@ public class DeltaLakeConnectorConfig implements Serializable {
     @JsonIgnore
     Long startingSnapShotVersionNumber;
 
-    public DeltaLakeConnectorConfig() {
+    public DeltaLakeSourceConnectorConfig() {
         this.startingVersion = "";
         this.startingTimeStamp = "";
         this.tablePath = "";
@@ -130,14 +130,14 @@ public class DeltaLakeConnectorConfig implements Serializable {
      * Load the configuration from provided properties.
      *
      * @param config property map
-     * @return a loaded {@link DeltaLakeConnectorConfig}.
+     * @return a loaded {@link DeltaLakeSourceConnectorConfig}.
      * @throws IOException when fail to load the configuration from provided properties
      */
-    public static DeltaLakeConnectorConfig load(Map<String, Object> config) throws IOException {
+    public static DeltaLakeSourceConnectorConfig load(Map<String, Object> config) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
-        DeltaLakeConnectorConfig conf = new DeltaLakeConnectorConfig();
+        DeltaLakeSourceConnectorConfig conf = new DeltaLakeSourceConnectorConfig();
         conf.includeHistoryData = false;
-        conf = mapper.readValue(new ObjectMapper().writeValueAsString(config), DeltaLakeConnectorConfig.class);
+        conf = mapper.readValue(new ObjectMapper().writeValueAsString(config), DeltaLakeSourceConnectorConfig.class);
         if (conf.startingTimeStamp.equals("") && conf.startingVersion.equals("")) {
             conf.startingVersion = FromLatest;
         }

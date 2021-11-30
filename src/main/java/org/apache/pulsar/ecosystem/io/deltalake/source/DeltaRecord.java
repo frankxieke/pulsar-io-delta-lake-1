@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.pulsar.ecosystem.io.deltalake;
+package org.apache.pulsar.ecosystem.io.deltalake.source;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.delta.standalone.actions.AddFile;
 import io.delta.standalone.actions.RemoveFile;

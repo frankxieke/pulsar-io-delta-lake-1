@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.pulsar.ecosystem.io.deltalake;
+package org.apache.pulsar.ecosystem.io.deltalake.source;
 
 import lombok.Data;
 import org.slf4j.Logger;

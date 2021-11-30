@@ -41,7 +41,7 @@ mvn package
 bin/pulsar-admin sources update \
 --archive  {nar tarball path} \
 --source-config-file config.json \
---classname org.apache.pulsar.ecosystem.io.deltalake.DeltaLakeConnectorSource \
+--classname org.apache.pulsar.ecosystem.io.deltalake.source.DeltaLakeConnectorSource \
 --name {connectorName}
 ```
 
@@ -54,7 +54,7 @@ in config.json, you can define the source connector config.
   "name": "{connectorName}",
   "topicName": "{topicName}",
   "parallelism": 1,
-  "processing-guarantees": 2,
+  "processingGuarantees": 2,
   "configs":
   {
     "startingVersion":"0",

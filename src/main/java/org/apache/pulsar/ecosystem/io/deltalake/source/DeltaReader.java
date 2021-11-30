@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.pulsar.ecosystem.io.deltalake;
+package org.apache.pulsar.ecosystem.io.deltalake.source;
 
 import io.delta.standalone.DeltaLog;
 import io.delta.standalone.Snapshot;
@@ -43,7 +43,7 @@ import lombok.Data;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.schema.Type;
-import org.apache.pulsar.ecosystem.io.deltalake.parquet.ParquetReader;
+import org.apache.pulsar.ecosystem.io.deltalake.parquet.DeltaParquetFileReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,7 +58,7 @@ public class DeltaReader {
     public DeltaLog deltaLog;
     public Function<ReadCursor, Boolean> filter;
     public static long topicPartitionNum;
-    public DeltaLakeConnectorConfig config;
+    public DeltaLakeSourceConnectorConfig config;
     private Configuration conf;
 
 
@@ -130,7 +130,7 @@ public class DeltaReader {
         }
     }
 
-    public DeltaReader(DeltaLakeConnectorConfig config) throws Exception {
+    public DeltaReader(DeltaLakeSourceConnectorConfig config) throws Exception {
         this.config = config;
         this.tablePath = this.config.tablePath;
         this.open();
@@ -319,7 +319,7 @@ public class DeltaReader {
             Action act = startCursor.act;
             if (act instanceof AddFile || act instanceof RemoveFile) {
                 String filePath = config.tablePath + "/" + ((FileAction) act).getPath();
-                ParquetReader readerTmp = new ParquetReader();
+                DeltaParquetFileReader readerTmp = new DeltaParquetFileReader();
                 try {
                     long fileRowNum = readerTmp.getRowNum(filePath, conf);
                     currentRecordsNum += fileRowNum;
@@ -350,9 +350,9 @@ public class DeltaReader {
             if (act instanceof AddFile || act instanceof RemoveFile) {
                 filePath = config.tablePath + "/" + ((FileAction) act).getPath();
                 long start = System.currentTimeMillis();
-                ParquetReader.Parquet parquet = null;
+                DeltaParquetFileReader.Parquet parquet = null;
                 try {
-                    parquet = ParquetReader.getTotalParquetData(filePath, conf);
+                    parquet = DeltaParquetFileReader.getTotalParquetData(filePath, conf);
                 } catch (IOException e) {
                     cf.completeExceptionally(e);
                     return;
@@ -392,7 +392,7 @@ public class DeltaReader {
             String filePath;
             if (act instanceof AddFile || act instanceof RemoveFile) {
                 filePath = config.tablePath + "/" + ((FileAction) act).getPath();
-                ParquetReader reader = new ParquetReader();
+                DeltaParquetFileReader reader = new DeltaParquetFileReader();
                 try {
                     reader.open(filePath, conf);
                 } catch (IOException e) {
@@ -401,7 +401,7 @@ public class DeltaReader {
                     return;
                 }
 
-                ParquetReader.Parquet parquet = null;
+                DeltaParquetFileReader.Parquet parquet = null;
                 int rowNumInParquetFile = 0;
                 try {
                     while ((parquet = reader.readBatch(config.maxReadRowCountOneRound)) != null) {

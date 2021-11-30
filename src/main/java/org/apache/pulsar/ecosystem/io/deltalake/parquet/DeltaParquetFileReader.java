@@ -40,8 +40,8 @@ import org.slf4j.LoggerFactory;
 /**
  * The parquet file read util.
  */
-public class ParquetReader {
-    private static final Logger log = LoggerFactory.getLogger(ParquetReader.class);
+public class DeltaParquetFileReader {
+    private static final Logger log = LoggerFactory.getLogger(DeltaParquetFileReader.class);
 
     ParquetFileReader reader;
     int currentRow;
@@ -51,7 +51,7 @@ public class ParquetReader {
     List<Type> fields;
     String filePath;
 
-    public ParquetReader() {
+    public DeltaParquetFileReader() {
         this.currentRow = 0;
         this.reader = null;
         this.currentPage = null;

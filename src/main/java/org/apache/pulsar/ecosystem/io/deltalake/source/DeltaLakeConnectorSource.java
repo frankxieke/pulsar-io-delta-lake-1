@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.pulsar.ecosystem.io.deltalake;
+package org.apache.pulsar.ecosystem.io.deltalake.source;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -60,7 +60,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
     private static final Logger log = LoggerFactory.getLogger(DeltaLakeConnectorSource.class);
     private final Integer minCheckpointMapKey = -1;
     private final int maxQueueSize = 100000;
-    public DeltaLakeConnectorConfig config;
+    public DeltaLakeSourceConnectorConfig config;
     // delta lake schema, when delta lake schema changes,this schema will change
     private SourceContext sourceContext;
     private ExecutorService executor;
@@ -95,7 +95,7 @@ public class DeltaLakeConnectorSource implements Source<GenericRecord> {
                 this.destinationTopic, sourceContext.getNumInstances(), sourceContext.getInstanceId());
 
         // load the configuration and validate it
-        this.config = DeltaLakeConnectorConfig.load(map);
+        this.config = DeltaLakeSourceConnectorConfig.load(map);
         this.config.validate();
 
         CompletableFuture<List<String>> listPartitions =

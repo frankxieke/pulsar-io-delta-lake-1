@@ -16,28 +16,8 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.pulsar.ecosystem.io.deltalake;
-
-import java.util.HashMap;
-import java.util.Map;
-import junit.framework.TestCase;
-
 
 /**
- * Test config.
+ * Classes for implementing a pulsar IO connector that read data from delta lake.
  */
-public class DeltaLakeConnectorConfigTest extends TestCase {
-
-    public void testLoad() {
-        Map<String, Object> map = new HashMap<>();
-        map.put("startingVersion", "1");
-        map.put("includeHistoryData", true);
-        map.put("tablePath", "/tmp/delta_stand_alone_test");
-        try {
-            DeltaLakeConnectorConfig config = DeltaLakeConnectorConfig.load(map);
-            System.out.println(config.toString());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-}
+package org.apache.pulsar.ecosystem.io.deltalake.source;

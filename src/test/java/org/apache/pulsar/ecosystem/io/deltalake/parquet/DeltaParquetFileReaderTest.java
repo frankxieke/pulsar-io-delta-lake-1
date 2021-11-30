@@ -26,7 +26,7 @@ import junit.framework.TestCase;
 /**
  * The ParquetReaderUtilsTest test ParquetReaderUtils.
  */
-public class ParquetReaderTest extends TestCase {
+public class DeltaParquetFileReaderTest extends TestCase {
 
     public void testGetPargetParquetDataquetData() {
 //        String path = "s3a://parquetxieke/part-00000-12bf10f8-92b8-4a1d-ad4c-11c1d975814e-c000.snappy.parquet";
