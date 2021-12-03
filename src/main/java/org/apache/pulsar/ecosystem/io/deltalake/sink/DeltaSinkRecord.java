@@ -21,11 +21,14 @@ package org.apache.pulsar.ecosystem.io.deltalake.sink;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.schema.GenericRecord;
 import org.apache.pulsar.functions.api.Record;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The delta sink Record.
  */
 public class DeltaSinkRecord {
+    private static final Logger log = LoggerFactory.getLogger(DeltaSinkRecord.class);
     public Record<GenericRecord> record;
     public int partition;
     public MessageId messageId;
@@ -33,9 +36,12 @@ public class DeltaSinkRecord {
     public long timestamp;
 
     public DeltaSinkRecord(Record<GenericRecord> record) {
-        this.record = record;
-        this.partition = record.getPartitionIndex().get();
-        this.messageId = record.getMessage().get().getMessageId();
-        this.timestamp = timestamp;
+        if (record != null) {
+            this.record = record;
+            this.partition = record.getPartitionIndex().get();
+            this.messageId = record.getMessage().get().getMessageId();
+            this.sequenceId = record.getMessage().get().getSequenceId();
+        }
+        this.timestamp = System.currentTimeMillis();
     }
 }

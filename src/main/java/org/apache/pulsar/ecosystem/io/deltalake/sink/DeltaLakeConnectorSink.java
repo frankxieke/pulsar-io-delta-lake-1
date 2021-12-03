@@ -38,6 +38,8 @@ import org.slf4j.LoggerFactory;
  */
 public class DeltaLakeConnectorSink  implements Sink<GenericRecord> {
     private static final Logger log = LoggerFactory.getLogger(DeltaLakeConnectorSink.class);
+    public DeltaLakeSinkConnectorConfig config;
+    public String appId;
     SinkContext sinkContext;
     private ExecutorService executor;
 
@@ -61,8 +63,6 @@ public class DeltaLakeConnectorSink  implements Sink<GenericRecord> {
 
     @Override
     public void write(Record<GenericRecord> record) throws Exception {
-        log.info("record1 schema {} {}", record.getSchema().getSchemaInfo().getSchemaDefinition(),
-               new String(record.getMessage().get().getData(), "UTF-8"));
         this.queue.put(new DeltaSinkRecord(record));
     }
 }
