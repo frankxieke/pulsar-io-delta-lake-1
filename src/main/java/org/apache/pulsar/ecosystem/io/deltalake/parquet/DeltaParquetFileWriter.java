@@ -22,6 +22,7 @@ package org.apache.pulsar.ecosystem.io.deltalake.parquet;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -176,6 +177,7 @@ public class DeltaParquetFileWriter implements DeltaParquetFileWriterInterface{
         this.avroSchema = avroSchema;
         this.lastRollFileTimeStamp = System.currentTimeMillis();
         this.partitionColumnPath = getPartitionValuePath(partitionValues);
+        this.partitionValues = partitionValues;
         this.currentFileFullPath = "";
         this.conf = conf;
     }
@@ -232,11 +234,11 @@ public class DeltaParquetFileWriter implements DeltaParquetFileWriterInterface{
             if (this.isClosed.get()) {
                 return fileStatList;
             }
-            String filePath = currentFileFullPath.substring(currentFileFullPath.lastIndexOf('/'));
+            String filePath = currentFileFullPath.substring(currentFileFullPath.lastIndexOf('/') + 1);
             FileStat fileStat = new FileStat();
             fileStat.filePath = filePath;
             fileStat.fileSize = getMinFileSize();
-            fileStat.partitionValues = partitionValues;
+            fileStat.partitionValues = new HashMap<>();
             fileStatList.add(fileStat);
             close();
         } finally {

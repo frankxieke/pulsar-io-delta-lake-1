@@ -57,12 +57,14 @@ public class DeltaWriter {
     private DeltaLog deltaLog;
     private org.apache.pulsar.ecosystem.io.deltalake.parquet.DeltaParquetFileWriterInterface writer;
     public Schema pulsarAvroSchema;
+    public boolean firstCommit;
 
     public DeltaWriter(DeltaLakeSinkConnectorConfig config, String appId,
                        Schema pulsarAvroSchema) throws Exception {
         this.config = config;
         this.appId = appId;
         this.pulsarAvroSchema = pulsarAvroSchema;
+        firstCommit = true;
         open();
     }
 
@@ -83,6 +85,10 @@ public class DeltaWriter {
     }
 
     public void writeAvroRecord(GenericRecord record, Schema schema) throws IOException {
+        if (firstCommit) {
+            createTable(schema);
+            firstCommit = false;
+        }
         if (checkSchemaChange(schema)) {
             log.info("pulsar schema change to {}", schema);
             List<DeltaParquetFileWriterInterface.FileStat> fileStatList = writer.closeAndFlush();
@@ -108,10 +114,31 @@ public class DeltaWriter {
         return false;
     }
 
+    public void createTable(Schema pulsarAvroSchema) {
+        OptimisticTransaction optimisticTransaction = deltaLog.startTransaction();
+        String id  = UUID.randomUUID().toString();
+        String name = "metadata";
+        String description = "meetadata change";
+        Format format = new Format();
+        List<String> partitionCols = new ArrayList<String>();
+        Map<String, String> configuration = new HashMap<String, String>();
+        Optional<Long> creatTime = Optional.of(System.currentTimeMillis());
+        StructType structType = SchemaConvert.convertAvroSchemaToDeltaSchema(pulsarAvroSchema);
+        Metadata newMe = new Metadata(id, name, description, format,
+                partitionCols, configuration, creatTime, structType);
+        long version = optimisticTransaction.txnVersion(appId);
+        SetTransaction setTransaction = new SetTransaction(appId, version + 1, Optional.of(System.currentTimeMillis()));
+        List<Action> filesToCommit = new ArrayList<>();
+        filesToCommit.add(setTransaction);
+        filesToCommit.add(newMe);
+        CommitResult result = optimisticTransaction.commit(filesToCommit, new Operation(Operation.Name.CREATE_TABLE),
+                "Pulsar-Sink-Connector-version_2.9.0");
+        log.info("create table delta schema succeed to {}", newMe);
+    }
     public void commitMetadata(Schema pulsarAvroSchema) {
         OptimisticTransaction optimisticTransaction = deltaLog.startTransaction();
         String id  = UUID.randomUUID().toString();
-        String name = "meetadata";
+        String name = "metadata";
         String description = "meetadata change";
         Format format = new Format();
         List<String> partitionCols = new ArrayList<String>();
@@ -134,11 +161,16 @@ public class DeltaWriter {
         List<Action> filesToCommit = new ArrayList<>();
         filesToCommit.add(setTransaction);
         for (int i = 0; i < parquetFiles.size(); i++) {
+            log.info("add filePath {} partitionValues {} fileSize {}",
+                    parquetFiles.get(i).filePath
+                    , parquetFiles.get(i).partitionValues
+                    , parquetFiles.get(i).fileSize);
             AddFile add = new AddFile(parquetFiles.get(i).filePath,
                     parquetFiles.get(i).partitionValues, parquetFiles.get(i).fileSize,
                     System.currentTimeMillis(), true, "\"{}\"", null);
             filesToCommit.add(add);
         }
+        log.info("add parquet files {}", filesToCommit);
         CommitResult result = optimisticTransaction.commit(filesToCommit, new Operation(Operation.Name.WRITE),
                 "Pulsar-Sink-Connector-version_2.9.0");
         log.debug("commit to delta table succeed for {} files, commit version {}",

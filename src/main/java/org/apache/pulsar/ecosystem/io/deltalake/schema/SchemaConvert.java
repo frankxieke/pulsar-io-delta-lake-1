@@ -52,7 +52,7 @@ public class SchemaConvert {
                     Schema.Field tmp = allFields.get(i);
                     newFields[i] = convertOneAvroFieldToDeltaField(tmp.name(), tmp.schema());
                 }
-                newField = new StructField(avroSchema.getName(), new StructType(newFields), avroSchema.isNullable());
+                newField = new StructField(avroSchema.getName(), new StructType(newFields), true);
                 break;
             case MAP:
                 Schema valueSchema = avroSchema.getValueType();
@@ -66,26 +66,26 @@ public class SchemaConvert {
                 StructType struct = new StructType(nfields);
                 ArrayType arrayType = new ArrayType(struct, false);
                 MapType mapType = new MapType(new StringType(), deltaValueField.getDataType(), false);
-                newField = new StructField(name, mapType, avroSchema.isNullable());
+                newField = new StructField(name, mapType, true);
                 break;
             case ARRAY:
                 Schema itemSchema = avroSchema.getElementType();
                 StructField deltaItemField = convertOneAvroFieldToDeltaField(itemSchema.getName(), itemSchema);
-                arrayType = new ArrayType(deltaItemField.getDataType(), avroSchema.isNullable());
-                newField = new StructField(name, arrayType, avroSchema.isNullable());
+                arrayType = new ArrayType(deltaItemField.getDataType(), true);
+                newField = new StructField(name, arrayType, true);
                 break;
             case UNION:
                 throw new UnsupportedOperationException("not support union in delta schema");
             case FIXED:
                 throw new UnsupportedOperationException("not support fixed in delta schema");
             case STRING:
-                newField = new StructField(name, new StringType(), avroSchema.isNullable());
+                newField = new StructField(name, new StringType(), true);
                 break;
             case BYTES:
                 newField = new StructField(name, new StringType(), avroSchema.isNullable());
                 break;
             case INT:
-                newField = new StructField(name, new IntegerType(), avroSchema.isNullable());
+                newField = new StructField(name, new IntegerType(), true);
                 break;
             case LONG:
                 newField = new StructField(name, new LongType(), avroSchema.isNullable());

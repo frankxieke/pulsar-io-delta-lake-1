@@ -18,21 +18,13 @@
  */
 package org.apache.pulsar.ecosystem.io.deltalake.sink;
 
-import io.delta.standalone.CommitResult;
 import io.delta.standalone.DeltaLog;
-import io.delta.standalone.Operation;
 import io.delta.standalone.OptimisticTransaction;
-import io.delta.standalone.VersionLog;
-import io.delta.standalone.actions.Action;
-import io.delta.standalone.actions.AddFile;
 import io.delta.standalone.actions.Format;
 import io.delta.standalone.actions.Metadata;
-import io.delta.standalone.actions.SetTransaction;
 import io.delta.standalone.types.StructType;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -87,24 +79,24 @@ public class DeltaWriterTest extends TestCase {
         Metadata newMe = new Metadata(id, name, description, format,
                 partitionCols, configuration, creatTime, structType);
 
-        SetTransaction setTransaction = new SetTransaction("appId1", 1, Optional.of(System.currentTimeMillis()));
-        AddFile add = new AddFile("part-0000-4958853b-caa7-491a-b9f6-767b1af20c25-c000.snappy.parquet",
-                new HashMap<String, String>(), 51310084, System.currentTimeMillis(), true, "\"{}\"", null);
-
-        List<Action> filesToCommit =
-                Arrays.asList(setTransaction, newMe, add);
-
-        CommitResult result = optimisticTransaction.commit(filesToCommit,
-                new Operation(Operation.Name.CREATE_TABLE), "Pulsar-Sink-Connector-version_2.9.0");
-        System.out.println(result.getVersion());
-        Iterator<VersionLog> vlogs = logW.getChanges(0, true);
-        while (vlogs.hasNext()) {
-            VersionLog v = vlogs.next();
-            System.out.println("action:" + v.getActions().size() + " version:" + v.getVersion());
-            List<Action> actions = v.getActions();
-            for (int i = 0; i < actions.size(); i++) {
-                System.out.println("i:" + i + " action:" + actions.get(i));
-            }
-        }
+//        SetTransaction setTransaction = new SetTransaction("appId1", 1, Optional.of(System.currentTimeMillis()));
+//        AddFile add = new AddFile("part-0000-4958853b-caa7-491a-b9f6-767b1af20c25-c000.snappy.parquet",
+//                new HashMap<String, String>(), 51310084, System.currentTimeMillis(), true, "\"{}\"", null);
+//
+//        List<Action> filesToCommit =
+//                Arrays.asList(setTransaction, newMe, add);
+//
+//        CommitResult result = optimisticTransaction.commit(filesToCommit,
+//                new Operation(Operation.Name.CREATE_TABLE), "Pulsar-Sink-Connector-version_2.9.0");
+//        System.out.println(result.getVersion());
+//        Iterator<VersionLog> vlogs = logW.getChanges(0, true);
+//        while (vlogs.hasNext()) {
+//            VersionLog v = vlogs.next();
+//            System.out.println("action:" + v.getActions().size() + " version:" + v.getVersion());
+//            List<Action> actions = v.getActions();
+//            for (int i = 0; i < actions.size(); i++) {
+//                System.out.println("i:" + i + " action:" + actions.get(i));
+//            }
+//        }
     }
 }

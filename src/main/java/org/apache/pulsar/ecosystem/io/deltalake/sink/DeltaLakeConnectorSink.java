@@ -57,8 +57,12 @@ public class DeltaLakeConnectorSink  implements Sink<GenericRecord> {
         log.info("topicName {} souceName {} partitionSize: {}", sinkContext.getInputTopics(), sinkContext.getSinkName(),
                 listPartitions.get().size());
         this.sinkContext = sinkContext;
+        // load the configuration and validate it
+        this.config = DeltaLakeSinkConnectorConfig.load(config);
+        this.config.validate();
         executor = Executors.newSingleThreadExecutor(new DefaultThreadFactory("deltaWriteThreadPool"));
         executor.execute(new DeltaWriterThread(this));
+
     }
 
     @Override
