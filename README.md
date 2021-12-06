@@ -1,14 +1,19 @@
 The Delta Lake connector is a Pulsar IO connector for copying data between Delta Lake and Pulsar. It contains two types of connectors:
 
-Delta Lake source connector
+***Delta Lake source connector***
 
-This connector capture data changes from delta lake and writes data to Pulsar topics.
+This source connector can capture data changes from delta lake through [DSR](https://github.com/delta-io/connectors/wiki/Delta-Standalone-Reader) and writes data to Pulsar topics.
+
+***Delta Lake sink connector***
+
+This sink connector can consume pulsar topic data and write into delta lake through [DSW](https://github.com/delta-io/connectors/blob/6b468dabcbea5e24a8f81887d2f6e855b2b63ed5/standalone/src/main/java/io/delta/standalone/DeltaLog.java#L85) 
+and users can use spark to process the delta lake table data further.
 
 
 Currently, Delta Lake connector versions (x.y.z) are based on Pulsar versions (x.y.z).
 
-| SQS connector version | Pulsar version | Doc |
-| :---------- | :------------------- | :------------- |
+| Delta connector version | Pulsar version | Doc |
+| :--------------- | :------------------- | :------------------------------|
 [2.9.0]()| [2.9.0]() | - [Delta Lake source connector]()<br><br>- [Delta sink connector]()
 
 
@@ -29,41 +34,5 @@ Below are the sub folders and files of this project and their corresponding desc
     │   └── test // stores all related tests.
     │ 
     ```
-## Build package
-
-```bash
-mvn package
-```
-
-1. Create Source Connector using create api
-
-```bash
-bin/pulsar-admin sources update \
---archive  {nar tarball path} \
---source-config-file config.json \
---classname org.apache.pulsar.ecosystem.io.deltalake.DeltaLakeConnectorSource \
---name {connectorName}
-```
-
-in config.json, you can define the source connector config.
-
-```bash
-{
-  "tenant": "public",
-  "namespace": "default",
-  "name": "{connectorName}",
-  "topicName": "{topicName}",
-  "parallelism": 1,
-  "processing-guarantees": 2,
-  "configs":
-  {
-    "startingVersion":"0",
-    "tablePath": "{delta_path}",
-    "fileSystemType": "filesystem or s3"
-  }
-}
-```
-
-
 
 
