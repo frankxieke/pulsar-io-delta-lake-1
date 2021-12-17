@@ -88,7 +88,55 @@ You can make the Delta source connector as a built-in connector and use it on a 
 
 ### Standalone cluster
 
+This example describes how to use the delta lake source connector to feed data from delta lake and write data to Pulsar topics in the standalone mode.
+1. Prepare Delta lake table service.
+
+2. Copy the NAR package to the Pulsar connectors directory.
+    ```bash
+    cp pulsar-io-delta-lake-2.9.0.nar PULSAR_HOME/connectors/
+    ```
+3. Start Pulsar in standalone mode.
+
+    ```bash
+    bin/pulsar standalone
+    ```
+4. Create Delta lake Source connector.
+    ```bash
+    bin/pulsar-admin sources create  --source-config-file config.json --source-type deltalake
+    ```
+5. Consume the message from the Pulsar topic.
+   
+    ```bash
+    bin/pulsar-client consume persistent://public/default/test -s "test-subs" -n 0
+    ```
+
+6. Write Delta lake table using spark.
+
+ After you write table successfully, you will see some messasges can be consumed from pulsar.
+
+
 ### on-premises cluster
+This example explains how to create delta lake source connector in an on-premises cluster.
+1. Copy the NAR package of the delta lake connector to the Pulsar connectors directory.
+     ```bash
+     cp pulsar-io-delta-lake-2.9.0.nar PULSAR_HOME/connectors/
+     ```
+2. Reload all built-in connectors.
+    ```bash
+    bin/pulsar-admin sources reload
+    ```
+3. Check whether the Delta lake source connector is available on the list or not.
+   ```bash
+   bin/pulsar-admin sources available-sources
+   ```
+4. Create an Delta lake source connector on a Pulsar cluster using the `pulsar-admin sources create` command.
+  
+    ```bash
+    bin/pulsar-admin sources create  --source-config-file config.json --source-type deltalake
+    ```                      
+
 
 ### K8S cluster
+This example demonstrates how to create Deta lake source connector on a K8S cluster.
+
 
