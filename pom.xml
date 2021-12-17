@@ -31,7 +31,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.apache.pulsar.ecosystem</groupId>
-  <artifactId>pulsar-io-delta-lake</artifactId>
+  <artifactId>pulsar-io-deltalake</artifactId>
   <version>2.9.0</version>
   <name>Pulsar Ecosystem :: IO Connector :: Delta Lake</name>
   <description>It is a delta lake source connector imported data from delta lake to pulsar.</description>
