@@ -21,7 +21,7 @@ Currently, Delta Lake connector versions (x.y.z) are based on Pulsar versions (x
 
 Below are the sub folders and files of this project and their corresponding descriptions.
 
-    ```bash
+  ```bash
     ├── conf // stores configuration examples.
     ├── docs // stores user guides.
     ├── src // stores source codes.
@@ -33,6 +33,6 @@ Below are the sub folders and files of this project and their corresponding desc
     │   ├── spotbugs // stores spotbugs configuration files.
     │   └── test // stores all related tests.
     │ 
-    ```
+  ```
 
 
