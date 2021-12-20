@@ -14,7 +14,7 @@ Currently, Delta Lake connector versions (x.y.z) are based on Pulsar versions (x
 
 | Delta connector version | Pulsar version | Doc |
 | :--------------- | :------------------- | :------------------------------|
-[2.9.0]()| [2.9.0]() | - [Delta Lake source connector]()<br><br>- [Delta sink connector]()
+[2.9.0-rc-202110221101]()| [2.9.0-rc-202110221101]() | - [Delta Lake source connector]()<br><br>- [Delta sink connector]()
 
 
 ## Project layout

@@ -59,7 +59,8 @@ You can create a configuration file (JSON) to set the following properties.
 ```
 
 # How to use
-You can use the Delta lake source connector as a non built-in connector or a built-in connector as below. 
+You can use the Delta lake source connector as a non built-in connector or a built-in connector as below. And your pulsar
+cluster version is above 2.9.0. 
 
 ## Use as non built-in connector 
 Supposing you have a pulsar cluster, we can create source using following steps 
@@ -138,5 +139,6 @@ This example explains how to create delta lake source connector in an on-premise
 
 ### K8S cluster
 This example demonstrates how to create Deta lake source connector on a K8S cluster.
+Now the k8S cluster not have 2.9.0 above.
 
 
