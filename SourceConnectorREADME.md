@@ -71,7 +71,12 @@ functionsWorkerEnabled=true
 ```
 * Enable statestore in function_worker.yml
 ```bash
-stateStorageServiceUrl: bk://127.0.0.1:6282
+stateStorageServiceUrl: bk://127.0.0.1:4181
+```
+
+* Enable stream storage in bookie.yaml
+```bash
+    extraServerComponents=org.apache.bookkeeper.stream.server.StreamStorageLifecycleComponent
 ```
 * Create Source Connector using pulsar-admin sources create api,in config.json, 
 the format is define above, you can define the source connector config.***
@@ -139,6 +144,6 @@ This example explains how to create delta lake source connector in an on-premise
 
 ### K8S cluster
 This example demonstrates how to create Deta lake source connector on a K8S cluster.
-Now the k8S cluster not have 2.9.0 above.
+Now the k8S cluster not have 2.9.0 and above and function mesh not support state store.
 
 
