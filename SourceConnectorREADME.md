@@ -29,7 +29,7 @@ You can create a configuration file (JSON) to set the following properties.
 | `name` | String|false | " " (empty string) | Source connector name. |
 | `parallelism` | Int|true | " " (empty string) | Number of source connector instances, each instance will run on a function worker. |
 | `processingGuarantees` | Int|true | " " (empty string) | Process gurantees. 2 means EFFECTIVE_ONCE |
-| `tablePath` | String|true | " " (empty string) | Delta table path for example: /tmp/delta_test or s3a://bucketname/ |
+| `tablePath` | String|true | " " (empty string) | Delta table path for example: /tmp/delta_test or s3a://bucketname/path |
 | `fileSystemType` | String|true | " " (empty string) | Storage type, `filesystem` or `s3` |
 | `s3aAccesskey` | String|true | " " (empty string) | If storage type is `s3` s3a [Accesskey](https://aws.amazon.com/cn/console/) |
 | `s3aSecretKey` | String|true | " " (empty string) | If storage type is `s3` s3a [SecretKey](https://aws.amazon.com/cn/console/) |
@@ -42,18 +42,18 @@ You can create a configuration file (JSON) to set the following properties.
 {
   "tenant": "public",
   "namespace": "default",
-  "name": "{connectorName}",
-  "topicName": "{topicName}",
+  "name": "<connectorName>",
+  "topicName": "<topicName>",
   "parallelism": 1,
   "processingGuarantees": 2,
   "configs":
   {
-    "tablePath": "{delta_path}",
-    "fileSystemType": "filesystem or s3",
-    "s3aAccesskey":"{s3a access key}",
-    "s3aSecretKey":"{s3a secrect key}",
-    "startingVersion": {delta snapshot version number},
-    "startingTimeStamp"：{delta snapshot timetstamp },
+    "tablePath": "<delta_path>",
+    "fileSystemType": "<filesystem or s3>",
+    "s3aAccesskey":"<s3a access key>",
+    "s3aSecretKey":"<s3a secrect key>",
+    "startingVersion": <delta snapshot version number>,
+    "startingTimeStamp"：<delta snapshot timetstamp>,
   }
 }
 ```
@@ -83,10 +83,10 @@ the format is define above, you can define the source connector config.***
 
 ```bash
 bin/pulsar-admin sources create \
---archive  {nar tarball path} \
---source-config-file {config json path} \
+--archive  <nar tarball path> \
+--source-config-file <config json path> \
 --classname org.apache.pulsar.ecosystem.io.deltalake.DeltaLakeConnectorSource \
---name {connectorName}
+--name <connectorName>
 ```
 
 ## Use as built-in connector
