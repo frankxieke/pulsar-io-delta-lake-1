@@ -118,7 +118,7 @@ public class DeltaWriter {
         OptimisticTransaction optimisticTransaction = deltaLog.startTransaction();
         String id  = UUID.randomUUID().toString();
         String name = "metadata";
-        String description = "meetadata change";
+        String description = "metadata change";
         Format format = new Format();
         List<String> partitionCols = new ArrayList<String>();
         Map<String, String> configuration = new HashMap<String, String>();

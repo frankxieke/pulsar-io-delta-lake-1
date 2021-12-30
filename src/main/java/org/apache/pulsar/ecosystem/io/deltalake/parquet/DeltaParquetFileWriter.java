@@ -39,7 +39,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
-import org.apache.pulsar.ecosystem.io.deltalake.parquet.DeltaParquetFileWriterInterface.FileStat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -240,6 +239,7 @@ public class DeltaParquetFileWriter implements DeltaParquetFileWriterInterface{
             fileStat.fileSize = getMinFileSize();
             fileStat.partitionValues = new HashMap<>();
             fileStatList.add(fileStat);
+            this.lastRollFileTimeStamp = System.currentTimeMillis();
             close();
         } finally {
             this.lock.unlock();
